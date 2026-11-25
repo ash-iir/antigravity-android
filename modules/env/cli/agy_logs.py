@@ -17,12 +17,13 @@ if MODULES_ENV_DIR not in sys.path:
     sys.path.insert(0, MODULES_ENV_DIR)
 
 try:
-    from bridge.client import resolve_gateway_url
+    from bridge.client import resolve_gateway_url, resolve_gateway_token
 except ImportError:
     try:
-        from modules.env.bridge.client import resolve_gateway_url
+        from modules.env.bridge.client import resolve_gateway_url, resolve_gateway_token
     except ImportError:
         resolve_gateway_url = None
+        resolve_gateway_token = None
 
 def get_gateway_base():
     if resolve_gateway_url:
@@ -64,9 +65,38 @@ CLR_CYAN = "\033[36m"
 CLR_GRAY = "\033[90m"
 
 
+def get_gateway_token():
+    if resolve_gateway_token:
+        return resolve_gateway_token()
+    env_tok = os.environ.get("AGY_GATEWAY_TOKEN", "").strip()
+    if env_tok:
+        return env_tok
+    home = os.environ.get("HOME")
+    candidates = [os.path.join(home, "logs", "gateway.token")] if home else []
+    candidates.extend([
+        "/data/user/0/com.agy.dev/files/logs/gateway.token",
+        "/data/user/0/com.agy/files/logs/gateway.token",
+    ])
+    for tfile in candidates:
+        if os.path.isfile(tfile):
+            try:
+                with open(tfile, "r", encoding="utf-8") as f:
+                    tok = f.read().strip()
+                    if tok:
+                        return tok
+            except Exception:
+                pass
+    return ""
+
+
 def fetch_from_gateway(url):
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": "agy-logs"})
+        headers = {"User-Agent": "agy-logs"}
+        tok = get_gateway_token()
+        if tok:
+            headers["X-AGY-Token"] = tok
+            headers["Authorization"] = f"Bearer {tok}"
+        req = urllib.request.Request(url, headers=headers)
         with urllib.request.urlopen(req, timeout=1.0) as resp:
             return json.loads(resp.read().decode("utf-8"))
     except Exception:

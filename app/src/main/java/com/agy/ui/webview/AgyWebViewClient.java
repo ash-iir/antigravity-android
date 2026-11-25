@@ -138,15 +138,20 @@ public final class AgyWebViewClient extends WebViewClient {
 
     @Override
     public void onReceivedSslError(WebView v, SslErrorHandler handler, SslError error) {
-        String url = (error != null && error.getUrl() != null)
-                ? error.getUrl().toLowerCase(java.util.Locale.US) : "";
-        if (url.contains("127.0.0.1") || url.contains("localhost")) {
-            Log.i(TAG, "accepting local loopback TLS cert for " + SensitiveDataRedactor.safeUrl(url));
-            handler.proceed();
-            return;
+        String rawUrl = (error != null) ? error.getUrl() : null;
+        if (rawUrl != null) {
+            try {
+                Uri uri = Uri.parse(rawUrl);
+                if (TrustedCoreOrigin.matches(uri, bridge.getEnginePort())
+                        && com.agy.core.CoreReadyProbe.matchesCert(context, error.getCertificate())) {
+                    handler.proceed();
+                    return;
+                }
+            } catch (Exception ignored) {
+            }
         }
         Log.w(TAG, "rejecting TLS error in WebView: "
-                + SensitiveDataRedactor.safeUrl(url));
+                + SensitiveDataRedactor.safeUrl(rawUrl != null ? rawUrl : ""));
         handler.cancel();
     }
 

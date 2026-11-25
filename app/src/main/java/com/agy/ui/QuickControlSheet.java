@@ -306,6 +306,21 @@ public final class QuickControlSheet {
             }
         }));
 
+        final boolean wakeLockOn = com.agy.core.CoreServerService.isKeepWakeLockEnabled(activity);
+        card.addView(makeSheetButton(
+                "Background WakeLock: " + (wakeLockOn ? "ON (tap to save battery)" : "OFF (tap to keep CPU awake)"),
+                btnBg, titleCol, borderCol, new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        boolean next = !com.agy.core.CoreServerService.isKeepWakeLockEnabled(activity);
+                        com.agy.core.CoreServerService.setKeepWakeLockEnabled(activity, next);
+                        closeSheet();
+                        Toast.makeText(activity,
+                                "Background WakeLock " + (next ? "enabled" : "disabled"),
+                                Toast.LENGTH_SHORT).show();
+                    }
+                }));
+
         card.addView(makeSheetButton("Check for Updates (GitHub)", btnBg, accentCol, borderCol, new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -382,6 +397,7 @@ public final class QuickControlSheet {
         StringBuilder sb = new StringBuilder();
         boolean coreUp = CoreRuntimeState.serverUrl != null;
         sb.append("Core: ").append(coreUp ? ("Running (:" + CoreRuntimeState.httpsPort + ")") : "Starting / Stopped");
+        sb.append(com.agy.core.CoreServerService.isKeepWakeLockEnabled(activity) ? " [WakeLock]" : "");
         long usedMb = (Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory()) / (1024L * 1024L);
         sb.append("  •  JVM Heap: ").append(usedMb).append(" MB\n");
 
@@ -398,7 +414,9 @@ public final class QuickControlSheet {
             sb.append("Root: Not granted (optional)");
         }
         if (shizukuBridge != null) {
-            sb.append("\nShizuku (rish): ").append(shizukuBridge.isAvailable() ? "Bundled" : "Unavailable");
+            sb.append("\nShizuku (rish): ").append(shizukuBridge.isAvailable()
+                    ? "Ready"
+                    : (shizukuBridge.isDexPresent() ? "Unavailable" : "Missing DEX"));
         }
         return sb.toString();
     }

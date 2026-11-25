@@ -18,7 +18,11 @@ public final class ShizukuBridge {
 
     public boolean isAvailable() {
         java.io.File rish = locator.rishBinary();
-        return rish.exists() && rish.canExecute();
+        return rish.isFile() && rish.canExecute() && locator.hasDex();
+    }
+
+    public boolean isDexPresent() {
+        return locator.hasDex();
     }
 
     /** Runs `cmd` as shell via rish. Returns combined stdout/stderr; errors are text. */

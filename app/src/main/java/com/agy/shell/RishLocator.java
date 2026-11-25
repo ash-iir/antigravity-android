@@ -28,4 +28,24 @@ public final class RishLocator {
         }
         return candidates[0];
     }
+
+    /** True if rish_shizuku.dex exists in any directory searched by the bundled rish script. */
+    public boolean hasDex() {
+        File files = appContext.getFilesDir();
+        File rishDir = rishBinary().getParentFile();
+        File[] candidates = new File[]{
+                rishDir != null ? new File(rishDir, "rish_shizuku.dex") : null,
+                rishDir != null ? new File(rishDir, "../share/rish/rish_shizuku.dex") : null,
+                new File(files, "runtime/bin/rish_shizuku.dex"),
+                new File(files, "usr/share/rish/rish_shizuku.dex"),
+                new File(files, "usr/bin/rish_shizuku.dex"),
+                new File(files, "bin/rish_shizuku.dex")
+        };
+        for (File candidate : candidates) {
+            if (candidate != null && candidate.isFile() && candidate.length() > 0) {
+                return true;
+            }
+        }
+        return false;
+    }
 }

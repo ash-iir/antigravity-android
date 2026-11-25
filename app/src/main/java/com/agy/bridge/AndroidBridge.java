@@ -56,7 +56,10 @@ public final class AndroidBridge {
     }
 
     @JavascriptInterface
-    public void openDirectoryPicker() {
+    public void openDirectoryPicker(String token) {
+        if (!matchesNativeBridgeToken(token)) {
+            return;
+        }
         final MainActivity act = activityRef != null ? activityRef.get() : MainActivity.activeActivity;
         if (act != null) {
             act.runOnUiThread(new Runnable() {
@@ -76,18 +79,20 @@ public final class AndroidBridge {
     }
 
     @JavascriptInterface
-    public boolean setTheme(String mode) {
-        return themeBridge.setTheme(mode);
+    public boolean setTheme(String token, String mode) {
+        return matchesNativeBridgeToken(token) && themeBridge.setTheme(mode);
     }
 
     @JavascriptInterface
-    public boolean setThemeByUser(final String mode) {
-        return themeBridge.setThemeByUser(mode);
+    public boolean setThemeByUser(String token, final String mode) {
+        return matchesNativeBridgeToken(token) && themeBridge.setThemeByUser(mode);
     }
 
     @JavascriptInterface
-    public void onVisualThemeChanged(String visual) {
-        themeBridge.onVisualThemeChanged(visual);
+    public void onVisualThemeChanged(String token, String visual) {
+        if (matchesNativeBridgeToken(token)) {
+            themeBridge.onVisualThemeChanged(visual);
+        }
     }
 
     @JavascriptInterface
@@ -101,8 +106,10 @@ public final class AndroidBridge {
     }
 
     @JavascriptInterface
-    public void setDesktopMode(boolean enabled) {
-        ui.setDesktopMode(enabled);
+    public void setDesktopMode(String token, boolean enabled) {
+        if (matchesNativeBridgeToken(token)) {
+            ui.setDesktopMode(enabled);
+        }
     }
 
     // Native-only helpers used while preparing the trusted app document.

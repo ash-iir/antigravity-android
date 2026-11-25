@@ -75,20 +75,20 @@ graph TD
 Ядро системы (`language_server`) компилируется под Linux/Glibc и выполняется в окружении Android через кастомный загрузчик `libloader.so` с эмуляцией инструкций LSE (`liblse_compat.so`).
 
 - **`CoreServerService`**: 
-  - Запускается как `ForegroundService` с типом `dataSync` и иконкой в трее (`ForegroundNotification`).
-  - Удерживает CPU WakeLock (`WakeLockHolder`) с флагом `PARTIAL_WAKE_LOCK`, гарантируя непрерывную работу агента при выключенном экране.
-  - Управляет жизненным циклом супервизора ядра, HTTP Gateway и фонового демона `agy-daemon`.
+  - Запускается как `ForegroundService` с типом `dataSync` и кликабельной иконкой в трее (`ForegroundNotification` с `FLAG_ACTIVITY_SINGLE_TOP | FLAG_ACTIVITY_CLEAR_TOP | FLAG_IMMUTABLE`).
+  - Управляет CPU WakeLock (`WakeLockHolder`, `PARTIAL_WAKE_LOCK`, включен по умолчанию и переключается пользователем в `QuickControlSheet`), гарантируя непрерывную работу агента при выключенном экране.
+  - Запускает/останавливает фонового демона `agy-daemon` с полным окружением (`HOME`, `PREFIX`, `LD_LIBRARY_PATH`), проверяет код возврата, а также очищает устаревшие файлы `hub_*.json` с мертвыми PID при старте.
 - **`CoreLauncher`**:
   - Управляет установкой фазы 1 (распаковка и верификация ядра) и запуском нативного процесса.
   - Содержит `killOrphanCoreProcesses()`: сканирует `/proc` и принудительно завершает (`SIGKILL`) любые зависшие orphan-процессы `language_server` от предыдущих сессий перед стартом, исключая ошибку `EADDRINUSE` (`listen: address already in use`) на фиксированных loopback-портах 45157/45158.
 - **`CoreProcessSupervisor`**:
   - Запускает ядро в выделенном рабочем потоке (`CoreServerThread`).
-  - Непрерывно стримит объединенный поток stdout/stderr в `files/logs/core.log` и кольцевой буфер `LogRingBuffer`.
+  - Непрерывно стримит stdout в `files/logs/core.log` (ротация при 1.5 МБ) и stderr в `files/logs/core_stderr.log` (ротация/лимит 512 КБ) через `SensitiveDataRedactor` и кольцевой буфер `LogRingBuffer`.
   - Реализует политику самовосстановления (`CoreRestartPolicy`): экспоненциальный backoff при неожиданном падении (до 3 перезапусков). Если ядро проработало стабильно более 60 секунд (`SUSTAINED_READY_MS`), счетчик падений обнуляется.
-  - При фатальных ошибках фиксирует детальный стек в `CrashRecorder`.
+  - При фатальных ошибках фиксирует детальный стек в `CrashRecorder` (ротация: хранятся последние 10 отчетов `crash_*.json`).
 - **`CoreReadyProbe`**:
   - Выполняет опрос готовности локального HTTPS порта с таймаутом до 60 секунд (`READY_TIMEOUT_MS = 60000`) для стабильного первого холодного запуска на процессорах ARMv8.0-A (Snapdragon 660 и др.).
-  - Выполняет криптографический Certificate Pinning по SHA-256 дайджесту сертификата `@raw/agy_core_cert`.
+  - Проверяет SHA-256 пиннинг сертификата `@raw/agy_core_cert` в `matchesCert()`, используемом `AgyWebViewClient.onReceivedSslError` совместно с `TrustedCoreOrigin.matches()`.
 - **`OpenUrlWatcher`**:
   - Решает проблему перехвата OAuth-авторизации Google (Google блокирует авторизацию внутри встроенного WebView).
   - Считывает строки вывода `language_server` в реальном времени, выявляя маркеры `AGY_OPEN_URL=`, `ANTIGRAVITY_OPEN_URL:` и ссылки `accounts.google.com`.
@@ -114,7 +114,7 @@ graph TD
 
 ### 2.3. Системный шлюз (`com.agy.gateway`)
 
-Встроенный высокопроизводительный HTTP-сервер (`SystemGatewayServer`), слушающий строго на `127.0.0.1:45161` (с авто-фоллбэком на порт `+2` при занятости). Номер порта сохраняется в `files/logs/gateway.port`.
+Встроенный HTTP-сервер (`SystemGatewayServer`), слушающий строго на `127.0.0.1:45160` (release) / `127.0.0.1:45161` (dev, с авто-фоллбэком `+2`). Номер порта сохраняется в `files/logs/gateway.port`, а одноразовый 64-hex CSPRNG-токен авторизации (`X-AGY-Token` / `Authorization: Bearer`) записывается в `files/logs/gateway.token` с правами `0600`. Запросы без валидного токена отклоняются с `401 Unauthorized`.
 
 Шлюз обеспечивает мост между окружением Linux (bash-скрипты, CLI-утилиты `agy-notify`, `agy-daemon`) и нативными Android API:
 
@@ -127,8 +127,8 @@ graph TD
 | `system_info` | `DeviceHandler` | Сбор телеметрии: уровень заряда батареи, статус зарядки, тип сети, свободная память и диск. |
 | `vibrate` | `DeviceHandler` | Тактильный отклик (Haptic Feedback) заданной длительности. |
 | `toast` | `DeviceHandler` | Отображение нативных всплывающих сообщений (Toast). |
-| `exec` | `ExecHandler` | Выполнение команд в шелле (`/system/bin/sh` или повышенный `rish` через Shizuku) с таймаутом, захватом потоков и переменными Git/TLS (`GIT_SSL_CAINFO`). (Нативный root доступен через shell-утилиты `agy-root`/`su`/`sudo`, но не открыт по неаутентифицированному HTTP). |
-| `root_status` | `GatewayDispatcher` / `RootBridge` | Проверка статуса нативного root (`su`, KernelSU/bakaSU/Magisk/APatch), поддержка `-mm` и состояние Shizuku. |
+| `exec` | `ExecHandler` | Выполнение команд в шелле (`/system/bin/sh` или повышенный `rish` через Shizuku) с лимитом параллелизма (`MAX_CONCURRENT_EXECS = 2`), ограничением вывода (256 КБ/поток), принудительным `destroyForcibly()` по таймауту и переменными Git/TLS (`GIT_SSL_CAINFO`). (Нативный root доступен через shell-утилиты `agy-root`/`su`/`sudo`, но не открыт по HTTP). |
+| `root_status` | `GatewayDispatcher` / `RootBridge` | Проверка статуса нативного root (`su`, KernelSU/bakaSU/Magisk/APatch), поддержка `-mm` и наличие `rish` + `rish_shizuku.dex`. |
 | `/gateway/status` | `SystemGatewayServer` | Проверка состояния шлюза (health check). |
 | `/gateway/logs` | `SystemGatewayServer` | Чтение последних строк системного лога из кольцевого буфера памяти. |
 | `/gateway/commands` | `SystemGatewayServer` | История выполненных шлюзом команд и их статусов. |
@@ -138,8 +138,8 @@ graph TD
 
 Класс `AndroidBridge` предоставляет минимальный, жестко изолированный интерфейс для фронтенда (`@JavascriptInterface`).
 
-- **Защита от сторонних фреймов:** Опасные операции (`onUiReady`, `onUiError`, `saveBlob`, `notifyAgentEvent`, `hasClipboardImage`, `requestClipboardImagePaste`, `readClipboardImage`) требуют передачи криптографического токена `blobBridgeToken`, известного только доверенному верхнеуровневому документу. Сравнение токенов производится через `MessageDigest.isEqual` во избежание timing-атак.
-- **Изоляция:** Из интерфейса `AndroidBridge` исключен доступ к выполнению шелла и произвольных системных команд. Нативный root (`RootBridge`, `RootResilience`) изолирован в Java-слое и shell-утилитах (`agy-root`, `su`, `sudo`, `agy-sys`).
+- **Защита от сторонних фреймов:** Все изменяющие состояние и чувствительные методы (`onUiReady`, `onUiError`, `openDirectoryPicker`, `setTheme`, `setThemeByUser`, `onVisualThemeChanged`, `setDesktopMode`, `saveBlob`, `notifyAgentEvent`, `hasClipboardImage`, `requestClipboardImagePaste`, `readClipboardImage`) требуют передачи криптографического токена `blobBridgeToken`, известного только доверенному верхнеуровневому документу. Сравнение токенов производится через `MessageDigest.isEqual` во избежание timing-атак.
+- **Изоляция:** Из интерфейса `AndroidBridge` исключен доступ к выполнению шелла и произвольных системных команд. Нативный root (`RootBridge`, `RootResilience`) изолирован в Java-слое и shell-утилитах (`agy-root`, `su`, `sudo`, `agy-sys`), а `SplashController` полностью уничтожает сплэш `WebView` (`destroy()`) сразу после `dismiss()` (с ленивым пересозданием только при рестарте или ошибке).
 
 ### 2.5. Динамические иконки и темы (`com.agy.theme`)
 

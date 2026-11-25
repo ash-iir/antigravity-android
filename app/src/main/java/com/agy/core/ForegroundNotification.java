@@ -3,9 +3,13 @@ package com.agy.core;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.app.Service;
+import android.content.Intent;
 import android.content.pm.ServiceInfo;
 import android.os.Build;
+
+import com.agy.ui.MainActivity;
 
 /** Builds and updates the low-importance ongoing core notification. */
 public final class ForegroundNotification {
@@ -41,6 +45,18 @@ public final class ForegroundNotification {
         }
     }
 
+    private static PendingIntent createLaunchIntent(Service service) {
+        Intent intent = new Intent(service, MainActivity.class);
+        intent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP
+                | Intent.FLAG_ACTIVITY_CLEAR_TOP
+                | Intent.FLAG_ACTIVITY_NEW_TASK);
+        int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            flags |= PendingIntent.FLAG_IMMUTABLE;
+        }
+        return PendingIntent.getActivity(service, NOTIFICATION_ID, intent, flags);
+    }
+
     private static Notification build(Service service, String status) {
         int icon = service.getResources().getIdentifier(
                 "ic_notification", "drawable", service.getPackageName());
@@ -54,6 +70,7 @@ public final class ForegroundNotification {
                 .setContentTitle("Antigravity")
                 .setContentText(status)
                 .setSmallIcon(icon)
+                .setContentIntent(createLaunchIntent(service))
                 .setOngoing(true)
                 .build();
     }

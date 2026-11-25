@@ -213,8 +213,10 @@ def record_crash_snapshot(error_msg: str, dump_path: str, extra_context: Dict[st
   1. Проверяет переменную окружения `AGY_GATEWAY_URL`.
   2. Ищет файл динамического порта `gateway.port` в `$HOME/logs/gateway.port`, `app_root/logs/gateway.port` и стандартных директориях `com.agy.dev` / `com.agy`.
   3. При отсутствии файла выбирает порт по умолчанию: `45161` для `DEV_MODE=1` / `com.agy.dev`, либо `45160` для production.
-- `send_command(command: str, payload: dict = None, gateway_url: str = None) -> dict`:
-  - Отправляет HTTP POST запрос с JSON-конвертом `{command, payload}` на эндпоинт `/gateway`.
+- `resolve_gateway_token(gateway_token=None) -> str` / `gateway_headers(...)`:
+  - Читает `AGY_GATEWAY_TOKEN` или файл `logs/gateway.token` (`0600`) и автоматически подставляет заголовки `X-AGY-Token` и `Authorization: Bearer <token>` во все запросы `bridge/client.py` и `cli/agy_logs.py`.
+- `send_command(command: str, payload: dict = None, gateway_url: str = None, gateway_token: str = None) -> dict`:
+  - Отправляет аутентифицированный HTTP POST запрос с JSON-конвертом `{command, payload}` на эндпоинт `/gateway`.
   - Автоматический failover: при недоступности основного порта выполняет попытку переподключения на альтернативный порт (`45160` <-> `45161`).
   - Возвращает `{ok: False, fallback: True, error: ...}` при невозможности связаться со шлюзом без генерации необработанных исключений.
 

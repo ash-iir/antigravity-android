@@ -51,5 +51,59 @@ class TestBridge(unittest.TestCase):
         self.assertTrue(callable(commands.clipboard_get))
         self.assertTrue(callable(commands.system_info))
 
+    def test_06_gateway_bearer_token_headers(self):
+        import http.server
+        import json as _json
+        import tempfile
+        import threading
+
+        seen = {}
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_POST(self):
+                seen["x_tok"] = self.headers.get("X-AGY-Token")
+                seen["auth"] = self.headers.get("Authorization")
+                length = int(self.headers.get("Content-Length", "0"))
+                _ = self.rfile.read(length)
+                body = _json.dumps({"ok": True}).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *_args):
+                pass
+
+        srv = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+        t = threading.Thread(target=srv.serve_forever, daemon=True)
+        t.start()
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                logs = os.path.join(tmp, "logs")
+                os.makedirs(logs, exist_ok=True)
+                with open(os.path.join(logs, "gateway.token"), "w", encoding="utf-8") as f:
+                    f.write("secret-test-token\n")
+                old_home = os.environ.get("HOME")
+                old_tok = os.environ.pop("AGY_GATEWAY_TOKEN", None)
+                os.environ["HOME"] = tmp
+                try:
+                    url = f"http://127.0.0.1:{srv.server_port}/gateway"
+                    res = client.send_command("system_info", gateway_url=url)
+                    self.assertTrue(res.get("ok"))
+                    self.assertEqual(seen.get("x_tok"), "secret-test-token")
+                    self.assertEqual(seen.get("auth"), "Bearer secret-test-token")
+                finally:
+                    if old_home is not None:
+                        os.environ["HOME"] = old_home
+                    else:
+                        os.environ.pop("HOME", None)
+                    if old_tok is not None:
+                        os.environ["AGY_GATEWAY_TOKEN"] = old_tok
+        finally:
+            srv.shutdown()
+            srv.server_close()
+
+
 if __name__ == "__main__":
     unittest.main()

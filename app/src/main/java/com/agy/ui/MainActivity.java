@@ -298,6 +298,9 @@ public class MainActivity extends Activity
         if (quickControlSheet != null) {
             quickControlSheet.destroy();
         }
+        if (splash != null) {
+            splash.destroy();
+        }
         com.agy.ui.download.FileDownloader.clearPendingTask();
         AppLifecycle.destroy(handler);
         if (androidBridge != null) {
@@ -419,6 +422,11 @@ public class MainActivity extends Activity
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             try {
                 if (!android.os.Environment.isExternalStorageManager()) {
+                    android.content.SharedPreferences prefs = getSharedPreferences("agy_prefs", MODE_PRIVATE);
+                    if (prefs.getBoolean("storage_prompted", false)) {
+                        return;
+                    }
+                    prefs.edit().putBoolean("storage_prompted", true).apply();
                     Intent intent = new Intent(
                             android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION);
                     intent.setData(Uri.parse("package:" + getPackageName()));

@@ -1,5 +1,6 @@
 package com.agy.log;
 
+import android.app.ActivityManager;
 import android.content.Context;
 import android.util.Log;
 
@@ -9,6 +10,8 @@ import org.json.JSONObject;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
+import java.util.Comparator;
 import java.util.List;
 
 /**
@@ -17,6 +20,7 @@ import java.util.List;
 public final class CrashRecorder {
 
     private static final String TAG = "CrashRecorder";
+    private static final int MAX_CRASH_FILES = 10;
     private static volatile JSONObject latestCrash = null;
 
     private CrashRecorder() {
@@ -38,6 +42,16 @@ public final class CrashRecorder {
             mem.put("free_mb", rt.freeMemory() / (1024 * 1024));
             mem.put("total_mb", rt.totalMemory() / (1024 * 1024));
             mem.put("max_mb", rt.maxMemory() / (1024 * 1024));
+            try {
+                ActivityManager am = (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
+                if (am != null) {
+                    ActivityManager.MemoryInfo mi = new ActivityManager.MemoryInfo();
+                    am.getMemoryInfo(mi);
+                    mem.put("sys_avail_mb", mi.availMem / (1024 * 1024));
+                    mem.put("sys_total_mb", mi.totalMem / (1024 * 1024));
+                }
+            } catch (Throwable ignored) {
+            }
             report.put("memory", mem);
 
             // Disk metrics
@@ -79,9 +93,28 @@ public final class CrashRecorder {
             try (FileOutputStream fos = new FileOutputStream(crashFile)) {
                 fos.write(report.toString(2).getBytes(StandardCharsets.UTF_8));
             }
+            pruneOldCrashes(crashesDir, MAX_CRASH_FILES);
             Log.i(TAG, "Crash report persisted: " + crashFile.getAbsolutePath());
         } catch (Exception e) {
             Log.w(TAG, "failed to persist crash report: " + e.getMessage());
+        }
+    }
+
+    private static void pruneOldCrashes(File crashesDir, int keep) {
+        File[] files = crashesDir.listFiles((dir, name) -> name.startsWith("crash_") && name.endsWith(".json"));
+        if (files == null || files.length <= keep) {
+            return;
+        }
+        Arrays.sort(files, new Comparator<File>() {
+            @Override
+            public int compare(File a, File b) {
+                int cmp = Long.compare(a.lastModified(), b.lastModified());
+                return cmp != 0 ? cmp : a.getName().compareTo(b.getName());
+            }
+        });
+        int toDelete = files.length - keep;
+        for (int i = 0; i < toDelete; i++) {
+            files[i].delete();
         }
     }
 }

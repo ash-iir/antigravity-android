@@ -44,6 +44,14 @@ def patch_main(file_path):
         print("[web-patch] Patched audioWorklet addModule to use Blob URL fallback")
         modified = True
 
+    # Ensure any pre-existing setDesktopMode(v) call passes the native bridge token.
+    legacy_desktop_call = "if(window.Android&&typeof window.Android.setDesktopMode==='function')window.Android.setDesktopMode(v)"
+    tokenized_desktop_call = "if(window.Android&&typeof window.Android.setDesktopMode==='function')window.Android.setDesktopMode(window.__AG_NATIVE_BRIDGE_TOKEN__||'',v)"
+    if legacy_desktop_call in content:
+        content = content.replace(legacy_desktop_call, tokenized_desktop_call)
+        print("[web-patch] Upgraded legacy setDesktopMode(v) call to include bridge token")
+        modified = True
+
     if "Desktop Mode" in content or "ag_desktop_mode" in content:
         print("[web-patch] Desktop Mode toggle already present in main.js")
         if modified:
@@ -95,7 +103,7 @@ def patch_main(file_path):
         "var s=localStorage.getItem('ag_desktop_mode');return s===null?!1:s==='true'}catch(_){return !1}});"
         f"var onDesktopToggle=(0,{react_id}.useCallback)(v=>{{"
         "setIsDesktop(v);try{localStorage.setItem('ag_desktop_mode',String(v));"
-        "if(window.Android&&typeof window.Android.setDesktopMode==='function')window.Android.setDesktopMode(v)}catch(_){}},[]);"
+        "if(window.Android&&typeof window.Android.setDesktopMode==='function')window.Android.setDesktopMode(window.__AG_NATIVE_BRIDGE_TOKEN__||'',v)}catch(_){}},[]);"
     )
 
     # Detect switch and setting item components

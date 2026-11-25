@@ -81,14 +81,16 @@ function notify() {
   } catch (e) { /* ignore */ }
   try {
     if (window.Android) {
+      var token = (typeof window !== 'undefined' && window.__AG_NATIVE_BRIDGE_TOKEN__)
+        ? String(window.__AG_NATIVE_BRIDGE_TOKEN__) : '';
       state.hasAndroid = true;
       if (typeof window.Android.setThemeByUser === 'function') {
-        window.Android.setThemeByUser(theme);
+        window.Android.setThemeByUser(token, theme);
       } else if (typeof window.Android.setTheme === 'function') {
-        window.Android.setTheme(theme);
+        window.Android.setTheme(token, theme);
       }
       if (typeof window.Android.onVisualThemeChanged === 'function') {
-        window.Android.onVisualThemeChanged(theme);
+        window.Android.onVisualThemeChanged(token, theme);
       }
     }
   } catch (e) { /* never throw into JS */ }

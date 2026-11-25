@@ -31,9 +31,11 @@
       window.__AG_NATIVE_BRIDGE_TOKEN__ = "test-token";
       window.Android = {
         isDesktopMode: () => true,
-        setDesktopMode: (v) => console.log("setDesktopMode", v),
+        setDesktopMode: (t, v) => console.log("setDesktopMode", v),
         onUiReady: (t) => console.log("onUiReady", t),
-        setThemeByUser: (t) => console.log("setThemeByUser", t),
+        setThemeByUser: (t, m) => console.log("setThemeByUser", m),
+        onVisualThemeChanged: (t, m) => console.log("onVisualThemeChanged", m),
+        openDirectoryPicker: (t) => console.log("openDirectoryPicker"),
         log: (m) => console.log("AndroidLog:", m),
         openExternalUrl: (u) => console.log("openExternalUrl", u),
         showToast: (m) => console.log("Toast:", m)

@@ -1,20 +1,21 @@
 package com.agy.core;
 
 import android.content.Context;
+import android.net.http.SslCertificate;
+import android.os.Build;
+import android.os.Bundle;
 import android.util.Log;
 
-import com.agy.util.CoreUrl;
 import com.agy.util.ProcessUtils;
 
+import java.io.ByteArrayInputStream;
 import java.io.InputStream;
-import java.net.URL;
 import java.security.MessageDigest;
 import java.security.cert.Certificate;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
-import javax.net.ssl.HttpsURLConnection;
 
-/** One-shot HTTPS and certificate-pin probe of the embedded core origin. */
+/** One-shot loopback readiness probe and bundled core certificate pinning helper. */
 public final class CoreReadyProbe {
 
     private static final String TAG = "CoreReadyProbe";
@@ -38,7 +39,46 @@ public final class CoreReadyProbe {
         }
     }
 
-    private static byte[] expectedCertDigest(Context context) throws Exception {
+    /** Returns true iff the peer SslCertificate SHA-256 matches the bundled core certificate. */
+    public static boolean matchesCert(Context context, SslCertificate cert) {
+        if (context == null || cert == null) {
+            return false;
+        }
+        try {
+            byte[] expected = expectedCertDigest(context);
+            if (expected == null || expected.length == 0) {
+                return false;
+            }
+            X509Certificate x509 = extractX509(cert);
+            if (x509 == null) {
+                return false;
+            }
+            byte[] actual = sha256(x509.getEncoded());
+            return MessageDigest.isEqual(expected, actual);
+        } catch (Exception e) {
+            Log.w(TAG, "certificate pin check failed: " + e.getMessage());
+            return false;
+        }
+    }
+
+    private static X509Certificate extractX509(SslCertificate cert) throws Exception {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            X509Certificate x509 = cert.getX509Certificate();
+            if (x509 != null) {
+                return x509;
+            }
+        }
+        Bundle state = SslCertificate.saveState(cert);
+        byte[] der = state != null ? state.getByteArray("x509-certificate") : null;
+        if (der == null || der.length == 0) {
+            return null;
+        }
+        Certificate parsed = CertificateFactory.getInstance("X.509")
+                .generateCertificate(new ByteArrayInputStream(der));
+        return (parsed instanceof X509Certificate) ? (X509Certificate) parsed : null;
+    }
+
+    public static byte[] expectedCertDigest(Context context) throws Exception {
         byte[] cached = expectedCertDigest;
         if (cached != null) {
             return cached;

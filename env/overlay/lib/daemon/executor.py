@@ -33,6 +33,7 @@ CONFIG_DIR = os.path.join(HOME, ".gemini", "antigravity-app", "daemon")
 TASKS_FILE = os.path.join(CONFIG_DIR, "tasks.json")
 LOG_FILE = os.path.join(CONFIG_DIR, "daemon.log")
 PID_FILE = os.path.join(CONFIG_DIR, "daemon.pid")
+LOCK_FILE = os.path.join(CONFIG_DIR, "daemon.lock")
 STOP_EVENT = threading.Event()
 
 # Global pool for executing tasks without blocking the main scheduler
@@ -44,13 +45,24 @@ RUNNING_LOCK = threading.Lock()
 def log(msg):
     ts = time.strftime("%Y-%m-%d %H:%M:%S")
     formatted = f"[{ts}] {msg}"
-    print(formatted, flush=True)
+    stdout_is_log = False
     try:
         os.makedirs(CONFIG_DIR, exist_ok=True)
         with open(LOG_FILE, "a", encoding="utf-8") as f:
+            try:
+                st_log = os.fstat(f.fileno())
+                st_out = os.fstat(sys.stdout.fileno())
+                stdout_is_log = (st_log.st_dev, st_log.st_ino) == (st_out.st_dev, st_out.st_ino)
+            except Exception:
+                pass
             f.write(formatted + "\n")
     except Exception:
         pass
+    if not stdout_is_log:
+        try:
+            print(formatted, flush=True)
+        except Exception:
+            pass
 
 
 def notify(title, message, tag=None):

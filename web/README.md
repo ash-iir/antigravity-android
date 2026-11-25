@@ -163,12 +163,13 @@ web/
 |---|---|---|
 | `onUiReady` | `(token: string) => void` | Вызывается скриптом `startup_ready.js` при первом реальном рендере DOM для скрытия нативного сплэш-экрана. |
 | `onUiError` | `(token: string, message: string) => void` | Передает критические фатальные ошибки JS в нативный логкат и экран ошибки. |
-| `setThemeByUser`| `(theme: string) => boolean` | Передает выбранную пользователем тему (`light`/`dark`) для обновления цвета системных баров Android. |
-| `onVisualThemeChanged` | `(theme: string) => void` | Сигнализирует о смене активного CSS-оформления. |
+| `setTheme` | `(token: string, mode: string) => boolean` | Применяет программную тему с проверкой токена. |
+| `setThemeByUser`| `(token: string, theme: string) => boolean` | Передает выбранную пользователем тему (`light`/`dark`) для обновления цвета системных баров Android. |
+| `onVisualThemeChanged` | `(token: string, theme: string) => void` | Сигнализирует о смене активного CSS-оформления. |
 | `getTheme` | `() => string` | Возвращает текущую системную тему устройства. |
 | `isDesktopMode` | `() => boolean` | Проверяет, включен ли режим широкого десктопного Viewport. |
-| `setDesktopMode`| `(enabled: boolean) => void` | Динамически переключает User-Agent и Viewport WebView между мобильным и десктопным режимами. |
-| `openDirectoryPicker` | `() => void` | Запускает системный диалог выбора папки (SAF Document Tree) для открытия проекта. |
+| `setDesktopMode`| `(token: string, enabled: boolean) => void` | Динамически переключает User-Agent и Viewport WebView между мобильным и десктопным режимами (защищено токеном). |
+| `openDirectoryPicker` | `(token: string) => void` | Запускает системный диалог выбора папки (SAF Document Tree) для открытия проекта (защищено токеном). |
 | `saveBlob` | `(token, base64, filename, mime) => void` | Безопасное сохранение сгенерированных веб-интерфейсом блобов в хранилище `Downloads`. |
 | `notifyAgentEvent` | `(token, type, title, body) => void` | Отправка кликабельного фонового уведомления при завершении или запросе подтверждения агента. |
 | `hasClipboardImage` | `(token) => boolean` | Быстрая проверка наличия изображения в `ClipDescription` без вызова toast-уведомления Android 12+. |

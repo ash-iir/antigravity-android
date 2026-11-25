@@ -77,6 +77,7 @@ public final class CoreProcessSupervisor {
         int attempt = 0;
         while (!stopping) {
             Writer log = CoreLogWriter.open(appContext.getFilesDir());
+            Writer errLog = CoreLogWriter.open(appContext.getFilesDir(), "core_stderr.log", CoreLogWriter.STDERR_MAX_BYTES);
             try {
                 CoreRuntimeState.lastError = null;
                 CoreRuntimeState.restarting = false;
@@ -85,9 +86,13 @@ public final class CoreProcessSupervisor {
                 process = proc;
 
                 final Writer streamWriter = log;
-                Thread streamer = new Thread(() -> streamLog(proc, streamWriter), "CoreStreamThread");
+                final Writer errWriter = errLog;
+                Thread streamer = new Thread(() -> streamOutput(proc, streamWriter), "CoreStreamThread");
+                Thread errStreamer = new Thread(() -> streamStderr(proc, errWriter), "CoreStderrThread");
                 streamer.setDaemon(true);
+                errStreamer.setDaemon(true);
                 streamer.start();
+                errStreamer.start();
 
                 if (!waitForReady(proc, log)) {
                     if (stopping) {
@@ -95,8 +100,11 @@ public final class CoreProcessSupervisor {
                     }
                     try {
                         streamer.join(1000);
+                        errStreamer.join(500);
                     } catch (InterruptedException ignored) {
                     }
+                    CoreLogWriter.closeQuietly(errLog);
+                    errLog = null;
                     int code = ProcessUtils.exitCode(proc);
                     if (CoreRuntimeState.lastError == null) {
                         CoreRuntimeState.lastError =
@@ -141,8 +149,11 @@ public final class CoreProcessSupervisor {
                 }
                 try {
                     streamer.join(1000);
+                    errStreamer.join(500);
                 } catch (InterruptedException ignored) {
                 }
+                CoreLogWriter.closeQuietly(errLog);
+                errLog = null;
 
                 int code = ProcessUtils.exitCode(proc);
                 if (System.currentTimeMillis() - readyAt >= CoreRestartPolicy.SUSTAINED_READY_MS) {
@@ -183,6 +194,7 @@ public final class CoreProcessSupervisor {
                 // install/launch failure: fail-closed, user retries from the splash.
                 break;
             } finally {
+                CoreLogWriter.closeQuietly(errLog);
                 CoreLogWriter.closeQuietly(log);
             }
         }
@@ -220,21 +232,40 @@ public final class CoreProcessSupervisor {
         return false;
     }
 
-    private void streamLog(Process proc, Writer log) {
-        try (BufferedReader reader = new BufferedReader(
-                new InputStreamReader(proc.getInputStream()))) {
+    private void streamOutput(Process proc, Writer log) {
+        pumpStream(proc.getInputStream(), log, true, false);
+    }
+
+    private void streamStderr(Process proc, Writer errLog) {
+        pumpStream(proc.getErrorStream(), errLog, false, true);
+    }
+
+    private void pumpStream(java.io.InputStream in, Writer target, boolean watchOpenUrl, boolean stderr) {
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(in))) {
             String line;
+            long writtenBytes = 0;
             while ((line = reader.readLine()) != null) {
                 String safeLine = SensitiveDataRedactor.redactLine(line);
-                Log.d(TAG, safeLine);
-                if (logBuffer != null) {
-                    logBuffer.appendLine(safeLine);
+                if (stderr) {
+                    Log.w(TAG, "[stderr] " + safeLine);
+                    // Cap single-session writes to avoid unbounded growth during long runs
+                    if (writtenBytes < CoreLogWriter.STDERR_MAX_BYTES) {
+                        CoreLogWriter.writeLine(target, safeLine);
+                        writtenBytes += safeLine.length() + 1;
+                    }
+                } else {
+                    Log.d(TAG, safeLine);
+                    if (logBuffer != null) {
+                        logBuffer.appendLine(safeLine);
+                    }
+                    CoreLogWriter.writeLine(target, safeLine);
                 }
-                CoreLogWriter.writeLine(log, safeLine);
-                openUrlWatcher.handleStreamLine(line);
+                if (watchOpenUrl) {
+                    openUrlWatcher.handleStreamLine(line);
+                }
             }
         } catch (Exception e) {
-            Log.w(TAG, "log stream ended", e);
+            Log.w(TAG, (stderr ? "stderr" : "log") + " stream ended", e);
         }
     }
 

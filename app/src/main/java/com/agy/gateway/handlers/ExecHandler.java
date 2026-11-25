@@ -16,17 +16,22 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.UUID;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Handles command execution requests with detailed telemetry, outputs, and exit codes.
+ * Handles command execution requests with bounded concurrency, output caps, and force termination.
  */
 public final class ExecHandler {
 
     private static final String TAG = "ExecHandler";
+    private static final int MAX_CONCURRENT_EXECS = 2;
+    private static final int MAX_OUTPUT_CHARS = 256 * 1024;
+
     private final Context context;
     private final CommandHistory history;
     private final LogRingBuffer logBuffer;
+    private final Semaphore execSlots = new Semaphore(MAX_CONCURRENT_EXECS);
 
     public ExecHandler(Context context, CommandHistory history, LogRingBuffer logBuffer) {
         this.context = context.getApplicationContext();
@@ -37,7 +42,7 @@ public final class ExecHandler {
     public JSONObject handle(JSONObject payload) {
         String cmd = payload.optString("cmd", "").trim();
         String source = payload.optString("source", "agent");
-        long timeoutMs = payload.optLong("timeout_ms", 30000);
+        long timeoutMs = Math.max(100L, Math.min(300000L, payload.optLong("timeout_ms", 30000)));
         boolean useRish = payload.optBoolean("rish", false);
         String cwdPath = payload.optString("cwd", context.getFilesDir().getAbsolutePath());
 
@@ -45,12 +50,17 @@ public final class ExecHandler {
         long startTime = System.currentTimeMillis();
 
         if (cmd.isEmpty()) {
-            JSONObject err = new JSONObject();
-            try {
-                err.put("ok", false);
-                err.put("error", "empty command");
-            } catch (Exception ignored) {}
-            return err;
+            return errorResponse("empty command");
+        }
+
+        boolean acquired = false;
+        try {
+            acquired = execSlots.tryAcquire(500, TimeUnit.MILLISECONDS);
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+        }
+        if (!acquired) {
+            return errorResponse("exec concurrency limit reached");
         }
 
         if (BuildConfig.DEBUG) {
@@ -65,6 +75,7 @@ public final class ExecHandler {
         StringBuilder stdoutBuf = new StringBuilder();
         StringBuilder stderrBuf = new StringBuilder();
         String status = "ERROR";
+        Process proc = null;
 
         try {
             ProcessBuilder pb;
@@ -83,10 +94,12 @@ public final class ExecHandler {
             String prefix = home + "/usr";
             pb.environment().put("HOME", home);
             pb.environment().put("PREFIX", prefix);
+            pb.environment().put("TMPDIR", context.getCacheDir().getAbsolutePath());
             pb.environment().put("PATH", home + "/runtime/bin:" + prefix + "/bin:/system/bin:" + System.getenv("PATH"));
             pb.environment().put("RISH_APPLICATION_ID", context.getPackageName());
             if (useRish) {
                 pb.environment().remove("LD_LIBRARY_PATH");
+                pb.environment().remove("LD_PRELOAD");
             } else {
                 pb.environment().put("LD_LIBRARY_PATH", prefix + "/lib");
                 pb.environment().put("TERMINFO", prefix + "/share/terminfo");
@@ -98,29 +111,41 @@ public final class ExecHandler {
                 pb.environment().put("GIT_ATTR_NOSYSTEM", "1");
             }
 
-            Process proc = pb.start();
+            proc = pb.start();
 
-            // Read stdout and stderr in background threads to avoid buffer deadlocks
-            Thread outThread = new Thread(() -> drainStream(proc.getInputStream(), stdoutBuf), "StdoutDrain");
-            Thread errThread = new Thread(() -> drainStream(proc.getErrorStream(), stderrBuf), "StderrDrain");
+            final InputStream outStream = proc.getInputStream();
+            final InputStream errStream = proc.getErrorStream();
+            Thread outThread = new Thread(() -> drainStream(outStream, stdoutBuf), "StdoutDrain");
+            Thread errThread = new Thread(() -> drainStream(errStream, stderrBuf), "StderrDrain");
             outThread.start();
             errThread.start();
 
             boolean finished = proc.waitFor(timeoutMs, TimeUnit.MILLISECONDS);
             if (finished) {
                 exitCode = proc.exitValue();
-                outThread.join(500);
-                errThread.join(500);
                 status = (exitCode == 0) ? "SUCCESS" : "FAILED";
             } else {
                 proc.destroy();
+                if (!proc.waitFor(200, TimeUnit.MILLISECONDS)) {
+                    proc.destroyForcibly();
+                }
                 status = "TIMEOUT";
                 stderrBuf.append("\n[Process timed out after ").append(timeoutMs).append("ms]");
             }
+            outThread.join(500);
+            errThread.join(500);
         } catch (Exception e) {
             status = "ERROR";
             stderrBuf.append("\nExecution exception: ").append(e.getMessage());
             Log.w(TAG, "exec error: " + e.getMessage());
+        } finally {
+            if (proc != null) {
+                try {
+                    proc.destroyForcibly();
+                } catch (Exception ignored) {
+                }
+            }
+            execSlots.release();
         }
 
         long durationMs = System.currentTimeMillis() - startTime;
@@ -150,10 +175,28 @@ public final class ExecHandler {
         return resp;
     }
 
+    private static JSONObject errorResponse(String message) {
+        JSONObject err = new JSONObject();
+        try {
+            err.put("ok", false);
+            err.put("error", message);
+        } catch (Exception ignored) {}
+        return err;
+    }
+
     private static void drainStream(InputStream in, StringBuilder out) {
+        boolean truncated = false;
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8))) {
             String line;
             while ((line = reader.readLine()) != null) {
+                if (truncated) {
+                    continue;
+                }
+                if (out.length() + line.length() + 1 > MAX_OUTPUT_CHARS) {
+                    truncated = true;
+                    out.append("\n...[output truncated at ").append(MAX_OUTPUT_CHARS).append(" chars]");
+                    continue;
+                }
                 if (out.length() > 0) {
                     out.append("\n");
                 }
