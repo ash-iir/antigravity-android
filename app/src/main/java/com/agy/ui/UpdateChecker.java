@@ -29,7 +29,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * Lightweight GitHub Release update checker targeting salmanbappi/antigravity-android.
  *
  * <p>Passively checks at most once every 24 hours after UI ready (respecting skipped
- * versions), and supports on-demand manual checks from {@link QuickControlSheet}.
+ * versions).
  */
 public final class UpdateChecker {
 
@@ -84,7 +84,7 @@ public final class UpdateChecker {
         checkAsync(activity, false);
     }
 
-    /** Manual check triggered from QuickControlSheet (always probes GitHub and shows feedback). */
+    /** Manual check trigger that always probes GitHub and shows feedback. */
     public static void checkManually(final Activity activity) {
         if (activity == null || activity.isFinishing()) {
             return;

@@ -8,7 +8,7 @@
 
   [![Android](https://img.shields.io/badge/Android-7.0%2B-3DDC84?style=flat-square&logo=android&logoColor=white)](https://android.com)
   [![Arch](https://img.shields.io/badge/ARM64-v8.0--A%2B-blue?style=flat-square)](https://arm.com)
-  [![Release](https://img.shields.io/badge/Version-2.34.12-blueviolet?style=flat-square)](https://github.com/salmanbappi/antigravity-android/releases)
+  [![Release](https://img.shields.io/badge/Version-2.34.13-blueviolet?style=flat-square)](https://github.com/salmanbappi/antigravity-android/releases)
   [![License](https://img.shields.io/badge/License-Apache_2.0-orange?style=flat-square)](LICENSE)
 
   <br/>
@@ -62,7 +62,7 @@ No PRoot, chroot, or virtualization overhead. Antigravity runs **bare-metal insi
 * **Autonomous Agent:** Plans tasks, edits code across project trees, executes shell tools, and fixes build errors.
 * **Elevated Control (Root & Shizuku):** Optional native `uid=0` support (`agy-root`, `su`, `sudo`, `agy-sys`) for KernelSU/bakaSU/Magisk/APatch with Doze/OOM anti-kill resilience, alongside non-root Shizuku (`uid=2000`) via `rish`.
 * **Chat Image Paste & Background Alerts:** Paste screenshots directly from Android clipboard or keyboard (`commitContent`), plus clickable background agent completion notifications.
-* **Quick-Control Sheet & Update Checker:** Tuckable floating `AGY` pill for Root/Shizuku status, Anti-Kill, Desktop Mode, Core Restart, Log Export, and passive GitHub Release checks.
+* **Passive Update Checker:** Lightweight background GitHub Release checks (throttled to once every 24h) after UI launch.
 * **Built-in `pkg` Manager:** Fast package manager installing development runtimes (`git`, `python`, `node`, `clang`) from Termux repos.
 * **Adaptive Viewports:** Seamless touch-first mobile UI with optional desktop layout.
 * **In-Place Upgrades:** Consistent keystore guarantees updating APKs without losing sessions or workspace data, paired with `agy-upgrade` CLI backup/restore.

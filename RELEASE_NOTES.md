@@ -1,3 +1,20 @@
+# Antigravity for Android v2.34.13
+
+## Release Packages
+
+| Package | Application ID | Runtime Port | Description |
+| :--- | :--- | :--- | :--- |
+| **`antigravity.apk`** | `com.agy` | 45157 | Standard production release with original Google account checks. |
+| **`antigravity-region-bypass.apk`** | `com.agy` | 45157 | Region-bypass edition with account eligibility check bypass. |
+| **`SHA256SUMS.txt`** | — | — | Cryptographic SHA-256 checksums for verification. |
+
+## Changes & Fixes (v2.34.13)
+
+### 1. Clean UI & Diagnostics Refinements
+* Removed the floating `AGY` pill and `QuickControlSheet` ("Antigravity Control") overlay from the UI, keeping the web workspace clean while retaining passive 24h `UpdateChecker` release notifications and background Doze/OOM `RootResilience`.
+
+---
+
 # Antigravity for Android v2.34.12
 
 ## Release Packages
@@ -18,11 +35,10 @@
 ### 2. IPC Security, Daemon Stability & Lifecycle
 * **Gateway & AndroidBridge:** Per-boot `0600` bearer token in `SystemGatewayServer`, bounded `/exec` concurrency, exact loopback core TLS pinning in WebView, and `blobBridgeToken` verification across mutating `AndroidBridge` methods.
 * **Background Daemon (`agy-daemon`):** Passes `LD_LIBRARY_PATH` cleanly from `CoreServerService`, uses persistent `fcntl.flock` on `daemon.lock` with PID verification, and eliminates duplicate `daemon.log` lines.
-* **UI, Teardown & Log Bounds:** Idempotent UI-thread `SplashController` WebView `destroy()` on `dismiss()` (lazily rebuilt if re-shown), clickable core service notification resuming `MainActivity`, `CrashRecorder` capped to 10 reports, capped/rotated `core_stderr.log`, dead-PID `hub_*.json` pruning, and WakeLock toggle in `QuickControlSheet`.
+* **UI, Teardown & Log Bounds:** Idempotent UI-thread `SplashController` WebView `destroy()` on `dismiss()` (lazily rebuilt if re-shown), clickable core service notification resuming `MainActivity`, `CrashRecorder` capped to 10 reports, capped/rotated `core_stderr.log`, dead-PID `hub_*.json` pruning, and background WakeLock management.
 
 ### 3. Features (UI, Root & Core)
-* Added `QuickControlSheet` (Restart Core, Log export, Desktop Mode, WakeLock toggle, Root/Anti-Kill, Check Updates) with a hideable/edge-snap floating AGY pill and passive 24h GitHub Release `UpdateChecker`.
-* Chat clipboard and IME (`commitContent`) image paste with background resizing, clickable background agent completion notifications, native root support (`RootBridge`, `RootResilience`, `agy-root`, `su`, `sudo`, `agy-sys`), and hardened Go TLS/DNS + `FileDownloader` / stream recovery.
+* Passive 24h GitHub Release `UpdateChecker`, chat clipboard and IME (`commitContent`) image paste with background resizing, clickable background agent completion notifications, native root support (`RootBridge`, `RootResilience`, `agy-root`, `su`, `sudo`, `agy-sys`), and hardened Go TLS/DNS + `FileDownloader` / stream recovery.
 
 ---
 

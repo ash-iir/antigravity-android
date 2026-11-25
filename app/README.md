@@ -13,7 +13,6 @@ graph TD
     subgraph UI_Layer ["UI Layer"]
         LDA["LauncherDarkActivity / LauncherLightActivity"] --> MA["MainActivity"]
         MA --> SC["SplashController (NativeSplashDotsView / Lazy WebView)"]
-        MA --> QCS["QuickControlSheet (AGY Pill & Diagnostics Sheet)"]
         MA --> UC["UpdateChecker (GitHub Releases 24h Check)"]
         MA --> WVH["WebViewHost (AgyWebView / ClipboardImageReader)"]
         WVH --> AWVC["AgyWebViewClient (OAuth & Asset Interceptor)"]
@@ -76,7 +75,7 @@ The core binary (`language_server`) is compiled for Linux/Glibc and runs on Andr
 
 - **`CoreServerService`**:
   - Runs as a `dataSync` `ForegroundService` with a clickable notification (`ForegroundNotification` using `FLAG_ACTIVITY_SINGLE_TOP | FLAG_ACTIVITY_CLEAR_TOP | FLAG_IMMUTABLE`).
-  - Manages the CPU WakeLock (`WakeLockHolder`, `PARTIAL_WAKE_LOCK`, enabled by default and toggleable via `QuickControlSheet`) to keep agent runs alive with the screen off.
+  - Manages the CPU WakeLock (`WakeLockHolder`, `PARTIAL_WAKE_LOCK`) to keep agent runs alive with the screen off.
   - Starts/stops `agy-daemon` with full environment variables (`HOME`, `PREFIX`, `LD_LIBRARY_PATH`), checks exit/failure codes, and prunes stale dead-PID `hub_*.json` files on startup.
 - **`CoreLauncher`**:
   - Runs Phase 1 extraction/verification and launches `language_server`.

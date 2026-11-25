@@ -77,7 +77,6 @@ public class MainActivity extends Activity
     private AndroidBridge androidBridge;
     private WebViewHost webViewHost;
     private SplashController splash;
-    private QuickControlSheet quickControlSheet;
     private FrameLayout rootLayout;
 
     private boolean appLoaded = false;
@@ -199,7 +198,6 @@ public class MainActivity extends Activity
         splash.loadInitial();
 
         splash.installExitAnimation(this);
-        quickControlSheet = new QuickControlSheet(this, rootLayout, themeManager, rootBridge, shizukuBridge);
 
         splashDeadline = System.currentTimeMillis() + SPLASH_TIMEOUT_MS;
         com.agy.ui.download.FileDownloader.pruneStalePendingBlobsAsync(this);
@@ -220,11 +218,6 @@ public class MainActivity extends Activity
     /** Keep the splash visible and replace it with a readable failure message. */
     public void showFatalError(String message) {
         splash.showFatalError(message);
-    }
-
-    /** Public trigger for QuickControlSheet to restart the core server cleanly. */
-    public void restartCoreFromUser() {
-        retryCore();
     }
 
     /** Retry re-runs install + start: stop the service, then start it again. */
@@ -259,9 +252,6 @@ public class MainActivity extends Activity
     public void dismissSplash() {
         Log.i(TAG, "dismissSplash: fading out splashView (280ms)");
         splash.dismiss();
-        if (quickControlSheet != null) {
-            quickControlSheet.attachPill();
-        }
         UpdateChecker.checkOnLaunch(this);
     }
 
@@ -295,9 +285,6 @@ public class MainActivity extends Activity
             activeActivity = null;
         }
         handler.removeCallbacks(notifyWebViewNetworkOnline);
-        if (quickControlSheet != null) {
-            quickControlSheet.destroy();
-        }
         if (splash != null) {
             splash.destroy();
         }
@@ -383,9 +370,6 @@ public class MainActivity extends Activity
 
     private void refreshTheme() {
         ThemeRefresher.refresh(this, themeManager, rootLayout, splash, webViewHost);
-        if (quickControlSheet != null) {
-            quickControlSheet.refreshTheme();
-        }
         if (webViewHost != null && webViewHost.getWebView() != null) {
             String resolved = themeManager != null ? themeManager.getTheme() : "light";
             webViewHost.getWebView().evaluateJavascript(
@@ -395,10 +379,6 @@ public class MainActivity extends Activity
 
     @Override
     public void onBackPressed() {
-        if (quickControlSheet != null && quickControlSheet.isSheetOpen()) {
-            quickControlSheet.closeSheet();
-            return;
-        }
         if (!BackNavigator.handle(webViewHost != null ? webViewHost.getWebView() : null)) {
             super.onBackPressed();
         }

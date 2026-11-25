@@ -15,7 +15,7 @@ on:
       tag_name:
         description: 'Release Tag (e.g. v2.34.0)'
         required: false
-        default: 'v2.34.12'
+        default: 'v2.34.13'
       draft:
         description: 'Create Draft Release'
         type: boolean
@@ -151,11 +151,12 @@ jobs:
 
             ---
 
-            ### What's New in v2.34.12
+            ### What's New in v2.34.13
 
-            * **Faster `pkg` Package Manager (`pkg_core.py`):** Added mtime-cached `dpkg`/`Packages` indexing, full DFS dependency & upgrade planning with disk-space preflight, conditional `curl -z` updates, parallel `curl -Z --http2` downloads with per-file SHA256 mirror fallback, single-pass staged `.deb` validation/extraction with byte-length-preserving ELF prefix rewriting, `--keep-cache` flag, and de-prioritized `tuna` fallback in `repo.conf`.
-            * **Security Hardening & Lifecycle Stability:** Added per-boot bearer token auth to `SystemGatewayServer` and token gating to mutating `AndroidBridge` calls, bounded `/exec` concurrency and timeouts, pinned WebView localhost TLS to the active loopback core certificate, hardened `agy-daemon` with `fcntl.flock` on persistent `daemon.lock` + deduplicated logging, fixed `SplashController` WebView teardown on dismiss, added clickable `ForegroundNotification` resume intent, and capped crash/stderr logs.
-            * **Quick Controls, Root & UI Features:** Added curated `QuickControlSheet` (Restart Core, Log export, Desktop Mode, WakeLock toggle, Root/Anti-Kill, Update Check) with a hideable/edge-snap AGY pill and passive 24h `UpdateChecker`, clipboard/IME image paste in chat, native `RootBridge`/`RootResilience` (`agy-root`, `su`, `sudo`, `agy-sys`), and hardened Go TLS/DNS + `FileDownloader` blob spill recovery.
+            * **Clean UI Overlay:** Removed the floating `AGY` pill and `QuickControlSheet` (`Antigravity Control`) modal overlay for an unobstructed chat workspace.
+            * **Faster `pkg` Package Manager (`pkg_core.py`):** Mtime-cached `dpkg`/`Packages` indexing, full DFS dependency & upgrade planning with disk-space preflight, conditional `curl -z` updates, parallel `curl -Z --http2` downloads with per-file SHA256 mirror fallback, single-pass staged `.deb` validation/extraction with byte-length-preserving ELF prefix rewriting, `--keep-cache` flag, and de-prioritized `tuna` fallback in `repo.conf`.
+            * **Security Hardening & Lifecycle Stability:** Per-boot bearer token auth in `SystemGatewayServer`, token gating on mutating `AndroidBridge` calls, bounded `/exec` concurrency and timeouts, loopback core TLS pinning in WebView, persistent `fcntl.flock` on `daemon.lock` + deduplicated logging in `agy-daemon`, `SplashController` WebView teardown on dismiss, clickable `ForegroundNotification` resume intent, and capped crash/stderr logs.
+            * **Root, Chat Media & Update Checker:** Passive 24h `UpdateChecker`, clipboard/IME image paste in chat, native `RootBridge`/`RootResilience` (`agy-root`, `su`, `sudo`, `agy-sys`), and hardened Go TLS/DNS + `FileDownloader` blob spill recovery.
 
             ### Foundation Highlights
 
@@ -166,4 +167,4 @@ jobs:
             ---
 
             > [!NOTE]
-            > **Seamless Upgrades:** Built with the consistent embedded signing keystore (`APP_VERSION_CODE=23412`). You can install this update directly over previous v2.x releases without uninstalling or losing local projects.
+            > **Seamless Upgrades:** Built with the consistent embedded signing keystore (`APP_VERSION_CODE=23413`). You can install this update directly over previous v2.x releases without uninstalling or losing local projects.

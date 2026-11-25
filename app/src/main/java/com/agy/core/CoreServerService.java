@@ -1,9 +1,7 @@
 package com.agy.core;
 
 import android.app.Service;
-import android.content.Context;
 import android.content.Intent;
-import android.content.SharedPreferences;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
@@ -27,10 +25,6 @@ import java.util.concurrent.TimeUnit;
 public final class CoreServerService extends Service {
 
     private static final String TAG = "CoreServer";
-    private static final String PREFS_QUICK_CONTROL = "agy_quick_control";
-    private static final String KEY_KEEP_WAKELOCK = "keep_wakelock_enabled";
-
-    private static volatile CoreServerService sInstance;
 
     private RuntimeManager runtime;
     private WakeLockHolder wakeLock;
@@ -41,44 +35,9 @@ public final class CoreServerService extends Service {
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private volatile boolean destroyed;
 
-    public static boolean isKeepWakeLockEnabled(Context context) {
-        if (context == null) {
-            return true;
-        }
-        try {
-            SharedPreferences prefs = context.getApplicationContext()
-                    .getSharedPreferences(PREFS_QUICK_CONTROL, Context.MODE_PRIVATE);
-            return prefs.getBoolean(KEY_KEEP_WAKELOCK, true);
-        } catch (Throwable ignored) {
-            return true;
-        }
-    }
-
-    public static void setKeepWakeLockEnabled(Context context, final boolean enabled) {
-        if (context == null) {
-            return;
-        }
-        try {
-            SharedPreferences prefs = context.getApplicationContext()
-                    .getSharedPreferences(PREFS_QUICK_CONTROL, Context.MODE_PRIVATE);
-            prefs.edit().putBoolean(KEY_KEEP_WAKELOCK, enabled).apply();
-        } catch (Throwable ignored) {
-        }
-        final CoreServerService svc = sInstance;
-        if (svc != null) {
-            svc.mainHandler.post(new Runnable() {
-                @Override
-                public void run() {
-                    svc.syncWakeLock(enabled);
-                }
-            });
-        }
-    }
-
     @Override
     public void onCreate() {
         super.onCreate();
-        sInstance = this;
         runtime = new RuntimeManager(this);
         logBuffer = new com.agy.log.LogRingBuffer();
         gatewayServer = new com.agy.gateway.SystemGatewayServer(this, logBuffer, com.agy.BuildConfig.GATEWAY_PORT);
@@ -96,7 +55,7 @@ public final class CoreServerService extends Service {
 
         ForegroundNotification.start(this);
         wakeLock = new WakeLockHolder();
-        syncWakeLock(isKeepWakeLockEnabled(this));
+        wakeLock.acquire(this);
 
         openUrlWatcher = new OpenUrlWatcher(this);
         openUrlWatcher.start();
@@ -109,17 +68,6 @@ public final class CoreServerService extends Service {
 
         startBackgroundDaemon();
         com.agy.shell.RootResilience.applyProtectionAsync(this, null, 3000L);
-    }
-
-    private void syncWakeLock(boolean enabled) {
-        if (destroyed || wakeLock == null) {
-            return;
-        }
-        if (enabled) {
-            wakeLock.acquire(this);
-        } else {
-            wakeLock.release();
-        }
     }
 
     private void startBackgroundDaemon() {
@@ -301,9 +249,6 @@ public final class CoreServerService extends Service {
         }
         if (runtime != null) {
             runtime.stopNetworkMonitor();
-        }
-        if (sInstance == this) {
-            sInstance = null;
         }
         CoreRuntimeState.serverUrl = null;
         CoreRuntimeState.lastError = null;
