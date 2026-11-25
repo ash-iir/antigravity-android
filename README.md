@@ -1,18 +1,8 @@
 <div align="center">
 
-  <p>
-    <b>English</b> &nbsp;&bull;&nbsp; <a href="README.ru.md">Русский</a>
-  </p>
-
-  <br/>
-
   <img src="docs/assets/logo.png" alt="Antigravity" width="88" height="88" style="border-radius: 20px;" />
 
   # Antigravity for Android
-
-> [!WARNING]
-> **Проект временно приостановлен на несколько месяцев из-за занятости разработчика.**  
-> *(Project is temporarily on hold for several months due to developer workload).*
 
 **Autonomous AI development environment running natively on Android & ARM64.**
 

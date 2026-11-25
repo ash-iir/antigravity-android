@@ -1,116 +1,98 @@
 # Antigravity for Android v2.34.12
 
-## Спецификация пакетов релиза
+## Release Packages
 
-| Файл пакета | Идентификатор приложения | Порт рантайма | Описание |
+| Package | Application ID | Runtime Port | Description |
 | :--- | :--- | :--- | :--- |
-| **`antigravity.apk`** | `com.agy` | 45157 | Стандартная редакция с оригинальными проверками Google. |
-| **`antigravity-region-bypass.apk`** | `com.agy` | 45157 | Редакция с обходом проверки соответствия аккаунта региональным ограничениям. |
-| **`SHA256SUMS.txt`** | — | — | Криптографические контрольные суммы пакетов. |
+| **`antigravity.apk`** | `com.agy` | 45157 | Standard production release with original Google account checks. |
+| **`antigravity-region-bypass.apk`** | `com.agy` | 45157 | Region-bypass edition with account eligibility check bypass. |
+| **`SHA256SUMS.txt`** | — | — | Cryptographic SHA-256 checksums for verification. |
 
-## Изменения и исправления (v2.34.12)
+## Changes & Fixes (v2.34.12)
 
-### 1. Ускорение пакетного менеджера `pkg` (`pkg_core.py`)
-* Внедрен единый Python-движок `pkg_core.py` (запуск с `-B` без генерации `__pycache__`, с сохранением Bash/AWK fallback): кэширование `db_sync_dpkg` и `Packages` индексов по `mtime`, полное планирование зависимостей для `install` и `upgrade` с проверкой свободного места.
-* Параллельное скачивание архивов `curl -Z --http2` с per-file проверкой SHA256 и точечным повтором упавших пакетов по зеркалам (`mirrors.tuna` перенесен в конец списка `repo.conf`), условное обновление `curl -z`.
-* Однопроходная staging-установка `.deb` (`stage_install_deb`) с явной нормализацией префикса `data/(data|user/<id>)/<pkg>/files/usr`, отклонением path traversal и убегающих симлинков до записи в `$PREFIX`, безопасным byte-length-preserving ELF-патчингом и авто-очисткой кэша (флаг `--keep-cache` сохраняет `.deb`).
+### 1. Accelerated `pkg` Package Manager (`pkg_core.py`)
+* Added unified Python engine `pkg_core.py` (invoked with `-B` and `sys.dont_write_bytecode = True`, keeping Bash/AWK fallbacks): mtime-cached `db_sync_dpkg` and `Packages` index parsing, full dependency planning for `install` and `upgrade` with free-space preflight.
+* Parallel archive downloads with `curl -Z --http2`, per-file SHA-256 validation and per-file mirror fallback (`mirrors.tuna` moved to bottom of `repo.conf`), plus conditional `curl -z` updates.
+* Single-pass staged `.deb` installation (`stage_install_deb`) with explicit `data/(data|user/<id>)/<pkg>/files/usr` prefix stripping, pre-write rejection of path traversal and escaping symlinks, byte-length-preserving ELF prefix rewriting, and auto cache cleanup (`--keep-cache` to retain `.deb`s).
 
-### 2. Безопасность IPC, стабильность демона и жизненного цикла
-* **Gateway & AndroidBridge:** Per-boot `0600` bearer-токен в `SystemGatewayServer`, ограничение параллелизма `/exec`, точный TLS-пиннинг локального сертификата ядра в WebView и проверка `blobBridgeToken` на изменяющих методах `AndroidBridge`.
-* **Фоновый демон (`agy-daemon`):** Передана переменная `LD_LIBRARY_PATH` из `CoreServerService`, добавлена файловая блокировка `fcntl.flock` на постоянном `daemon.lock` с проверкой PID и устранено дублирование строк в `daemon.log`.
-* **UI, очистка ресурсов и логи:** Полное освобождение `SplashController` `WebView` при закрытии (с ленивым пересозданием при повторе), кликабельное уведомление ядра для возврата в существующую `MainActivity`, ограничение дампов `CrashRecorder` (10 последних), ротация `core_stderr.log` и переключение WakeLock в `QuickControlSheet`.
+### 2. IPC Security, Daemon Stability & Lifecycle
+* **Gateway & AndroidBridge:** Per-boot `0600` bearer token in `SystemGatewayServer`, bounded `/exec` concurrency, exact loopback core TLS pinning in WebView, and `blobBridgeToken` verification across mutating `AndroidBridge` methods.
+* **Background Daemon (`agy-daemon`):** Passes `LD_LIBRARY_PATH` cleanly from `CoreServerService`, uses persistent `fcntl.flock` on `daemon.lock` with PID verification, and eliminates duplicate `daemon.log` lines.
+* **UI, Teardown & Log Bounds:** Idempotent UI-thread `SplashController` WebView `destroy()` on `dismiss()` (lazily rebuilt if re-shown), clickable core service notification resuming `MainActivity`, `CrashRecorder` capped to 10 reports, capped/rotated `core_stderr.log`, dead-PID `hub_*.json` pruning, and WakeLock toggle in `QuickControlSheet`.
 
-### 3. Пользовательские функции (UI, Root и Core)
-* Панель `QuickControlSheet` (перезапуск ядра, экспорт логов, Desktop Mode, Root/Anti-Kill, WakeLock, проверка обновлений) со скрываемым/сворачиваемым плавающим ярлыком AGY и пассивным `UpdateChecker` раз в 24 часа.
-* Поддержка вставки изображений из буфера обмена и IME в чат с авто-масштабированием на фоновом потоке, кликабельные уведомления завершения ответа агента, нативные обертки root (`RootBridge`, `RootResilience`, `agy-root`, `su`, `sudo`, `agy-sys`), усиленный TLS/Go DNS и восстановление `FileDownloader` / потока.
+### 3. Features (UI, Root & Core)
+* Added `QuickControlSheet` (Restart Core, Log export, Desktop Mode, WakeLock toggle, Root/Anti-Kill, Check Updates) with a hideable/edge-snap floating AGY pill and passive 24h GitHub Release `UpdateChecker`.
+* Chat clipboard and IME (`commitContent`) image paste with background resizing, clickable background agent completion notifications, native root support (`RootBridge`, `RootResilience`, `agy-root`, `su`, `sudo`, `agy-sys`), and hardened Go TLS/DNS + `FileDownloader` / stream recovery.
 
 ---
 
 # Antigravity for Android v2.33.0
 
-## Спецификация пакетов релиза
+## Release Packages
 
-| Файл пакета | Идентификатор приложения | Порт рантайма | Описание |
+| Package | Application ID | Runtime Port | Description |
 | :--- | :--- | :--- | :--- |
-| **`antigravity.apk`** | `com.agy` | 45157 | Стандартная редакция с оригинальными проверками Google (чистая версия без модификаций кода аутентификации). |
-| **`antigravity-region-bypass.apk`** | `com.agy` | 45157 | Редакция с обходом проверки учетных записей (позволяет авторизоваться под аккаунтами, блокируемыми со стороны Google; требует наличия сетевого туннеля/VPN). |
-| **`SHA256SUMS.txt`** | — | — | Криптографические контрольные суммы бинарных файлов. |
+| **`antigravity.apk`** | `com.agy` | 45157 | Standard production release with original Google account checks. |
+| **`antigravity-region-bypass.apk`** | `com.agy` | 45157 | Region-bypass edition with account eligibility check bypass (requires network tunnel/VPN where applicable). |
+| **`SHA256SUMS.txt`** | — | — | Cryptographic SHA-256 checksums for binary verification. |
 
 ---
 
-## Изменения и исправления (v2.33.0)
+## Changes & Fixes (v2.33.0)
 
-### 1. Синхронизация с официальным релизом Google Antigravity v2.33.0
-* Синхронизированы версия приложения (`APP_VERSION_NAME=2.33.0`) и версия ядра (`CORE_VERSION=2.33.0`).
-* Обновлен конвейер бинарных патчей (`modules/patches`): добавлена поддержка унифицированных сигнатур перехвата `sigill_handler` и `resolv_redirect` для совместимости со свежими сборками Go runtime.
-* Исправлены сигнатуры `crash_suppressor` (`failfast_cpu_and_atomic`) для Google Antigravity v2.33.0: устранен сбой `FATAL ERROR: This binary was compiled with lse enabled` и аварийное завершение с кодом 132 (SIGILL) на процессорах ARMv8.0-A (Cortex-A53, Helio G25/A22, Snapdragon 685).
-* Пройдена полная модульная верификация всех подсистем (`core`, `patches`, `io`, `runner`, `env`, `builder`).
+### 1. Sync with Official Google Antigravity v2.33.0 Core
+* Synchronized app version (`APP_VERSION_NAME=2.33.0`) and core version (`CORE_VERSION=2.33.0`).
+* Updated binary patch pipeline (`modules/patches`): unified signatures for `sigill_handler` and `resolv_redirect` for newer Go runtime builds.
+* Fixed `crash_suppressor` (`failfast_cpu_and_atomic`) signatures for Google Antigravity v2.33.0, eliminating `FATAL ERROR: This binary was compiled with lse enabled` and `SIGILL` (exit 132) on ARMv8.0-A CPUs (Cortex-A53, Helio G25/A22, Snapdragon 685).
+* Completed full modular test verification across all subsystems (`core`, `patches`, `io`, `runner`, `env`, `builder`).
 
 ---
 
 # Antigravity for Android v2.4.1
 
-## Спецификация пакетов релиза
+## Changes & Fixes (v2.4.1)
 
-| Файл пакета | Идентификатор приложения | Порт рантайма | Описание |
-| :--- | :--- | :--- | :--- |
-| **`antigravity.apk`** | `com.agy` | 45157 | Стандартная редакция с оригинальными проверками Google (чистая версия без модификаций кода аутентификации). |
-| **`antigravity-region-bypass.apk`** | `com.agy` | 45157 | Редакция с обходом проверки учетных записей (позволяет авторизоваться под аккаунтами, блокируемыми со стороны Google; требует наличия сетевого туннеля/VPN). |
-| **`SHA256SUMS.txt`** | — | — | Криптографические контрольные суммы бинарных файлов. |
+### 1. Built-in Web Terminal & PTY Support (PR #19)
+* **Length-Preserving PTY Shell Binary Patch:** Fixed terminal crashes caused by missing `/bin/bash` on Android by patching `/bin/bash` to `/bin///sh` (exact 9 bytes) without shifting ELF section offsets.
+* **Prioritized `$SHELL` Resolution in `CoreEnvironment`:**
+  1. `$PREFIX/bin/bash` (full interactive bash with `.bashrc`, completion, and history)
+  2. `runtime/bin/bash` (bundled bridge runtime)
+  3. `/system/bin/sh` (system fallback shell)
+* **Terminal Emulation & `terminfo`:** Added `TERM=xterm-256color` and `TERMINFO` pointing to `$PREFIX/share/terminfo` for proper colors and ANSI sequences in interactive TUI apps (`nano`, `htop`, `mc`).
 
----
-
-## Изменения и исправления (v2.4.1)
-
-### 1. Поддержка встроенного веб-терминала и спавнера PTY (PR #19)
-* **Низкоуровневый бинарный патч PTY-шеллы:** Устранено аварийное завершение терминала из-за отсутствия `/bin/bash` на Android. Реализован модульный бинарный патч с сохранением длины строки (`/bin/bash` ➔ `/bin///sh`, ровно 9 байт), безопасно перенаправляющий запросы спавнера ядра в системный шелл Android без сдвига смещений ELF-секций.
-* **Приоритетная иерархия `$SHELL` в супервизоре процесса (`CoreEnvironment`):** Вместо жестко заданного `runtime/bin/bash` выстроена отказоустойчивая цепочка разрешения шелла:
-  1. `$PREFIX/bin/bash` (полноценный bash окружения пользователя со всей поддержкой `.bashrc`, автодополнения и истории);
-  2. `runtime/bin/bash` (встроенный bridge-рантайм);
-  3. `/system/bin/sh` (гарантированный системный шелл Android).
-* **Эмуляция терминала и база `terminfo`:** В окружение процесса добавлен экспорт `TERM=xterm-256color` и автоматическое подключение каталога `TERMINFO` из `$PREFIX/share/terminfo`, что предотвращает артефакты и искажения цветов и управляющих последовательностей ANSI в интерактивных консольных программах (`nano`, `htop`, mc).
-
-### 2. Повышение стабильности локальной сборки пакетов (AAPT)
-* В этапы сборки ресурсов `modules/builder/02_r_java.sh` и `modules/builder/06_package.sh` добавлен экспорт `export ANDROID_DATA="${ANDROID_DATA:-/data}"`. Это устраняет сбои компилятора `aapt` с кодом `SIGABRT (134)` при сборке APK непосредственно внутри ARM64 Android userspace.
+### 2. Local APK Build Stability (AAPT)
+* Exported `ANDROID_DATA="${ANDROID_DATA:-/data}"` in `modules/builder/02_r_java.sh` and `06_package.sh` to prevent `aapt` `SIGABRT (134)` crashes when building APKs directly inside Android ARM64 userspace.
 
 ---
 
-## Ранее реализованные ключевые возможности (v2.4.0)
+## Earlier Key Capabilities (v2.4.0)
 
-### 1. Безопасность и изоляция данных (Issue #6)
-* Из релизных сборок полностью удален атрибут `android:debuggable="true"`.
-* Устранена уязвимость, позволявшая локальному пользователю или стороннему приложению через `run-as com.agy` считывать OAuth-токены сессий и внутренние файлы конфигурации.
-* Флаг отладки изолирован исключительно в dev-сборке (`com.agy.dev`).
+### 1. Security & Data Isolation (Issue #6)
+* Removed `android:debuggable="true"` from production builds (isolated solely to `--dev` / `com.agy.dev`), blocking `run-as com.agy` credential extraction.
 
-### 2. Системный диалог выбора файлов (Issue #8)
-* Устаревший ограниченный интерфейс Storage Access Framework (SAF) заменен на нативный системный Intent-селектор Android.
-* Обеспечен прямой доступ к файлам, изображениям, видео и архивам из Галереи, Google Фото и любых сторонних файловых менеджеров.
-* Реализовано автоматическое сохранение постоянных разрешений на чтение (`Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION`).
+### 2. Native Android File & Media Picker (Issue #8)
+* Replaced SAF-only document picker with the universal Android chooser supporting photos, videos, and files from Gallery, Photos, and third-party managers with persistent URI permissions (`Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION`).
 
-### 3. Совместимость с процессорами архитектуры ARMv8.0-A
-* Добавлена библиотека динамической эмуляции атомарных инструкций `liblse_compat.so` и низкоуровневый перехватчик `sigill_handler`.
-* Устранены аварийные завершения с кодом `SIGILL: illegal instruction` на устройствах с чипсетами Qualcomm Snapdragon 680/685 (Cortex-A53 / Redmi Note 12).
+### 3. ARMv8.0-A CPU Compatibility
+* Added `liblse_compat.so` atomic/SIMD instruction emulation and `sigill_handler` to prevent `SIGILL: illegal instruction` on Snapdragon 680/685 / Cortex-A53 devices.
 
-### 4. Оптимизация авторизации OAuth
-* Полностью устранен дисковый опрос (polling с интервалом 80 мс) и создание промежуточных файлов при входе в учетную запись.
-* Захват URL авторизации переведен на прямой перехват стандартного потока вывода ядра (stdout) с мгновенной отправкой Intent в системный браузер.
+### 4. Streamlined OAuth Authentication
+* Removed 80 ms disk polling and temp files; captures auth URLs directly from core stdout and launches the system browser cleanly.
 
-### 5. Аппаратный интерфейс фонарика
-* Добавлена консольная утилита управления вспышкой камеры: `torch on` / `torch off`.
+### 5. Hardware Flashlight Bridge
+* Added camera flash control via `torch on` / `torch off`.
 
-### 6. Фоновый планировщик задач (`agy-daemon`)
-* Реализован системный микро-демон (<10 МБ RAM, 0% CPU в режиме ожидания) для выполнения отложенных и периодических задач по расписанию (cron, интервалы).
-* Добавлена поддержка отслеживания изменений файлов и отправка нативных уведомлений в панель Android через `agy-notify`.
+### 6. Background Micro-Daemon (`agy-daemon`)
+* Added low-footprint (<10 MB RAM, 0% idle CPU) scheduler for delayed/interval/cron tasks, file watchers, and Android notifications (`agy-notify`).
 
-### 7. Диагностика запуска ядра
-* В интерфейс ошибки инициализации сервера добавлены действия «Copy Logs» и «Save Logs» для быстрого экспорта журнала сбоя в буфер обмена или файл.
+### 7. Core Startup Diagnostics
+* Added **Copy Logs** and **Save Logs** actions directly on the startup failure overlay.
 
-### 8. Модульная структура конвейера сборки
-* Исходный код разнесен по изолированным модулям: `modules/patches`, `modules/runner`, `modules/builder`.
-* Внедрена аргументная передача параметров компиляторам `@java_sources.txt` и `@class_files.txt`, исключающая ошибку переполнения буфера командной строки ядра Linux (`ARG_MAX` / `E2BIG`).
+### 8. Modular Gradle-Free Build Pipeline
+* Split architecture into `modules/patches`, `modules/runner`, and `modules/builder` using compiler `@argfile` lists to avoid Linux `ARG_MAX` limits.
 
 ---
 
-## Обновление и совместимость
+## Upgrade & Compatibility
 
-Все сборки подписаны постоянным ключом проекта. Обновление устанавливается поверх предыдущих версий 2.x без удаления приложения. Пользовательские проекты в каталоге `Documents`, рабочее окружение и сессии полностью сохраняются.
+All official CI releases are signed with the same persistent signing keystore. Updates install in-place over prior v2.x releases without uninstalling or losing workspace files, sessions, or `Documents`.

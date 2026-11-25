@@ -1,29 +1,29 @@
 # Antigravity Core Binary Patcher (`modules/patches`)
 
-Модуль точечного бинарного патчинга ядра Antigravity (`language_server`) под архитектуру **Android ARM64 (aarch64)**. Обеспечивает обход платформенных ограничений (Android seccomp, Bionic libc, отсутствие LSE atomics на ARMv8.0-A) и интеграцию с runtime-окружением.
+Precision AArch64 binary patcher for the Antigravity core (`language_server`) targeting **Android ARM64**, bypassing platform restrictions (Android seccomp, Bionic libc differences, and missing hardware LSE atomics on ARMv8.0-A) and integrating runtime helpers.
 
 ---
 
-## 1. Архитектура
+## 1. Architecture
 
-```
+```text
 modules/patches/
-├── pipeline.py              # CLI-оркестратор и API запуска пайплайна
+├── pipeline.py              # CLI orchestrator and Python pipeline API
 ├── spec/
-│   └── patch_manifest.json  # Спецификация ожидаемых патчей и политик
-├── engine/                  # Низкоуровневые движки анализа и модификации
-│   ├── elf_scanner.py       # Парсер ELF64/AArch64 и локатор секции .text
-│   ├── pclntab_scanner.py   # Парсер таблицы функций Go pclntab и MOVZ-кодировщик
-│   ├── byte_replacer.py     # Поиск и in-place замена байтовых паттернов
-│   ├── reporter.py          # Формирование JSON-отчетов по выполненным патчам
-│   └── patch_context.py     # Модель контекста выполнения
-├── groups/                  # Функциональные группы патчей
-│   ├── gates/               # Обход CLI gate и Enterprise Auth
-│   ├── syscalls/            # Замена seccomp-блокируемых faccessat2/fchmodat2
-│   ├── sigill/              # Защита обработчика SIGILL (для liblse_compat)
-│   ├── resolv/              # Редирект /etc/resolv.conf на относительный путь
-│   └── failfast/            # Подавление проверок CPU ARMv8.0-A и preinit atomic
-└── tests/                   # Модульные и интеграционные тесты
+│   └── patch_manifest.json  # Expected patches and verification policies
+├── engine/                  # Low-level binary analysis and patching engines
+│   ├── elf_scanner.py       # ELF64/AArch64 parser and .text locator
+│   ├── pclntab_scanner.py   # Go pclntab function table parser & MOVZ encoder
+│   ├── byte_replacer.py     # In-place pattern matching and replacement
+│   ├── reporter.py          # JSON patch report generator
+│   └── patch_context.py     # Execution context state model
+├── groups/                  # Functional patch groups
+│   ├── gates/               # CLI gate and Enterprise Auth bypasses
+│   ├── syscalls/            # Seccomp-blocked faccessat2/fchmodat2 replacements
+│   ├── sigill/              # SIGILL handler protection for liblse_compat
+│   ├── resolv/              # Relative /etc/resolv.conf redirect + fallback DNS
+│   └── failfast/            # ARMv8.0-A CPU check and preinit atomic suppression
+└── tests/                   # Unit and E2E tests
     ├── test_byte_replacer.py
     ├── test_elf_scanner.py
     ├── test_pclntab_scanner.py
@@ -33,33 +33,26 @@ modules/patches/
 
 ---
 
-## 2. Группы патчей
+## 2. Patch Groups
 
-| Группа | Модуль | Цель и сигнатура | Действие |
-|---|---|---|---|
-| **gates** | `cli_gate` | `ldrb w1, [x0,#8]` в проверке CLI gate | Заменяется на `mov w1, #1` (`21 00 80 52`) |
-| **gates** | `enterprise_auth` | `EnterpriseAuthValidator.Validate` | Принудительная установка флага валидности |
-| **syscalls** | `faccessat` | `syscall.faccessat2` (sys_439: `0xd28036e0`) | Ретаргетинг на `faccessat` (sys_48: `0xd2800600`) |
-| **syscalls** | `fchmodat` | `syscall.fchmodat2` (sys_452: `0xd2803880`) | Ретаргетинг на `fchmodat` (sys_53: `0xd28006a0`) |
-| **syscalls** | `pidfd` | `internal/syscall/unix.PidFDOpen` (sys_434: `0xd2803640`) | Возврат `(-1, syscall.ENOSYS)` без вызова сисколла для предотвращения SIGSYS seccomp |
-| **sigill** | `sigill_handler` | Вызов `rt_sigaction` в рантайме Go | Игнорирование сигнала `SIGILL` (4) для сохранения обработчика `liblse_compat.so` |
-| **resolv** | `resolv_redirect` | Строка `/etc/resolv.conf` (16 байт) и `defaultNS` fallback | Замена `/etc/resolv.conf` на `etc//resolv.conf` и патч fallback DNS на `8.8.8.8:53` для гарантии разрешения контекст-провайдеров (Google Drive) |
-| **failfast** | `crash_suppressor` | ARMv8.0-A CPU feature check (`0x7701180`) & preinit atomic (`0x7765c60`) | Branch `b +0x64` в обход проверки LSE/CRC/AES и замена `ldaddal` на `ldr`/`str` для полной совместимости с процессорами ARMv8.0-A (Snapdragon 660 и др., без аппаратного LSE) |
+| Group | Module | Target & Signature | Action |
+| :--- | :--- | :--- | :--- |
+| **gates** | `cli_gate` | `ldrb w1, [x0,#8]` in CLI gate check | Patched to `mov w1, #1` (`21 00 80 52`) |
+| **gates** | `enterprise_auth` | `EnterpriseAuthValidator.Validate` | Forces valid flag return |
+| **syscalls** | `faccessat` | `syscall.faccessat2` (sys_439: `0xd28036e0`) | Retargeted to `faccessat` (sys_48: `0xd2800600`) |
+| **syscalls** | `fchmodat` | `syscall.fchmodat2` (sys_452: `0xd2803880`) | Retargeted to `fchmodat` (sys_53: `0xd28006a0`) |
+| **syscalls** | `pidfd` | `internal/syscall/unix.PidFDOpen` (sys_434: `0xd2803640`) | Returns `(-1, syscall.ENOSYS)` without trapping seccomp `SIGSYS` |
+| **sigill** | `sigill_handler` | Go runtime `rt_sigaction` call | Skips overwriting `SIGILL` (4) to preserve `liblse_compat.so` handler |
+| **resolv** | `resolv_redirect` | `/etc/resolv.conf` (16 bytes) & `defaultNS` fallback | Rewrites `/etc/resolv.conf` to `etc//resolv.conf` and patches fallback DNS to `8.8.8.8:53` |
+| **failfast** | `crash_suppressor` | ARMv8.0-A CPU check (`0x7701180`) & preinit atomic (`0x7765c60`) | Branches `b +0x64` over LSE/CRC/AES checks and replaces `ldaddal` with `ldr`/`str` for ARMv8.0-A CPUs |
 
 ---
 
-## 3. Оптимизации движков анализа (Заход 1)
+## 3. Analyzer Engine Optimizations
 
-1. **`elf_scanner.py`**:
-   - Прямая валидация заголовка `e_ident` по смещению 0 с поддержкой поиска встроенных ELF-контейнеров.
-   - Поддержка stripped-бинарников (`e_shnum == 0`): автоматический fallback на Program Headers (`PT_LOAD` с флагом `PF_X`).
-   - Строгая проверка границ смещений и размеров для секций `.text`, `.shstrtab` и таблиц заголовков.
-2. **`pclntab_scanner.py`**:
-   - Оптимизированный `find_function`: прямой поиск позиции имени функции в таблице строк `funcnametab`.
-   - Внутреннее кэширование результатов поиска функций (`_cache`) в контексте pclntab, исключающее циклы декодирования десятков тысяч строк latin-1 на каждый сисколл.
-3. **Zero-Copy в группах патчей**:
-   - Полное устранение промежуточных аллокаций `bytes(data)` в циклах сканирования; прямая работа по протоколу буфера (`bytearray` / `memoryview`).
-   - Устранение обхода верификации в `crash_suppressor.py`: строгое соблюдение политики fail-closed.
+1. **`elf_scanner.py`:** Validates `e_ident` directly at offset 0 (with embedded ELF scan support), falls back to executable `PT_LOAD` program headers on stripped binaries (`e_shnum == 0`), and enforces strict section/header bounds.
+2. **`pclntab_scanner.py`:** Performs direct substring lookup in `funcnametab` and caches function resolution (`_cache`) across syscall checks.
+3. **Zero-Copy Scanning:** Eliminates redundant `bytes(data)` copies using `bytearray`/`memoryview` and enforces fail-closed verification in `crash_suppressor.py`.
 
 ---
 
@@ -67,19 +60,19 @@ modules/patches/
 
 ### CLI Runner
 ```bash
-# Применение всех патчей к бинарнику:
+# Apply all patches:
 python3 modules/patches/pipeline.py /path/to/language_server
 
-# С сохранением отчета в manifest:
+# Save JSON patch report:
 python3 modules/patches/pipeline.py /path/to/language_server --manifest report.json
 
-# Проверка наличия патчей (exit code 0 / 1):
+# Verify applied patches (exit 0 / 1):
 python3 modules/patches/pipeline.py /path/to/language_server --verify
 
-# Тестовый прогон без записи изменений:
+# Dry-run without modifying disk:
 python3 modules/patches/pipeline.py /path/to/language_server --dry-run
 
-# Толерантность к отсутствующим сигнатурам:
+# Allow missing optional signatures:
 python3 modules/patches/pipeline.py /path/to/language_server --allow-missing
 ```
 
@@ -89,23 +82,22 @@ import pipeline
 
 ok = pipeline.run_pipeline(
     target_path="/path/to/language_server",
-    verify=False,        # Только верификация
-    dry_run=False,       # Прогон без записи на диск
-    allow_missing=False, # Не падать при отсутствии сигнатур
-    manifest_path=None   # Путь для сохранения JSON-манифеста
+    verify=False,
+    dry_run=False,
+    allow_missing=False,
+    manifest_path=None,
 )
 ```
 
 ---
 
-## 5. Тестирование
+## 5. Testing
 
-Запуск полного тестового набора:
 ```bash
 bash modules/patches/tests/run_all.sh
 ```
 
-- `test_byte_replacer.py`: юнит-тесты сопоставления байт и точечной замены.
-- `test_elf_scanner.py`: валидация ELF64, fallback на Program Headers для stripped-бинарников и проверка границ.
-- `test_pclntab_scanner.py`: валидация кодирования опкодов AArch64 `MOVZ X0, #imm`, прямой поиск в `funcnametab` и кэширование.
-- `test_full_pipeline.py`: E2E тест на реальном pristine-бинарнике `language_server` (dry-run, apply, sha256 check, verify, idempotence, fail-closed validation).
+- `test_byte_replacer.py`: Byte pattern matching and in-place replacement checks.
+- `test_elf_scanner.py`: ELF64 validation, stripped `PT_LOAD` fallback, and bounds checks.
+- `test_pclntab_scanner.py`: AArch64 `MOVZ` encoding, `funcnametab` lookup, and cache tests.
+- `test_full_pipeline.py`: End-to-end test against the pristine `language_server` binary (dry-run, patch, SHA-256 verification, idempotence, and fail-closed validation).
