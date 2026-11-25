@@ -18,20 +18,30 @@ index_files() { ls "$PKG_INDEX"/repo.*.Packages 2>/dev/null; }
 # ---------------------------------------------------------------- update
 cmd_update() {
     ensure_dirs; load_conf
-    local i=0 url gz idx got=0
+    local i=0 url gz idx got=0 any_changed=0 before_sig after_sig
     for url in "${PKG_REPOS[@]}"; do
         i=$((i + 1))
         gz="$PKG_CACHE/repo.$i.Packages.gz"
         idx="$PKG_INDEX/repo.$i.Packages"
         local repo_url="$url/dists/$PKG_CHANNEL/$PKG_COMPONENT/binary-$PKG_ARCH/Packages.gz"
         printf 'Get:%s %s %s/%s %s Packages\n' "$i" "$url" "$PKG_CHANNEL" "$PKG_COMPONENT" "$PKG_ARCH"
-        if curl -# -fL --retry 2 --connect-timeout 10 --cacert "$PKG_CERT" -o "$gz" "$repo_url"; then
-            if gzip -dc "$gz" > "$idx"; then
+        before_sig=""
+        [ -s "$gz" ] && before_sig="$(stat -c '%Y:%s' "$gz" 2>/dev/null || wc -c < "$gz" 2>/dev/null || true)"
+        local curl_args=(-# -fL --retry 2 --connect-timeout 10 --cacert "$PKG_CERT")
+        [ -s "$gz" ] && [ -s "$idx" ] && curl_args+=(-z "$gz")
+        if curl "${curl_args[@]}" -o "$gz" "$repo_url"; then
+            after_sig="$(stat -c '%Y:%s' "$gz" 2>/dev/null || wc -c < "$gz" 2>/dev/null || true)"
+            if [ -s "$idx" ] && [ -n "$before_sig" ] && [ "$before_sig" = "$after_sig" ]; then
                 printf '%s\n' "$url" > "$PKG_INDEX/repo.$i.url"
                 got=$((got + 1))
                 break
+            elif gzip -dc "$gz" > "$idx.tmp" && mv -f "$idx.tmp" "$idx"; then
+                printf '%s\n' "$url" > "$PKG_INDEX/repo.$i.url"
+                got=$((got + 1))
+                any_changed=1
+                break
             else
-                rm -f "$idx"
+                rm -f "$idx.tmp" "$idx"
                 warn "gunzip failed: $url"
             fi
         else
@@ -42,13 +52,18 @@ cmd_update() {
         || die "update failed: no repository index fetched (repos: ${PKG_REPOS[*]})"
     printf 'Reading package lists... Done\n'
     printf 'Building dependency tree... Done\n'
-    index_rebuild_all
+    if [ "$any_changed" -eq 1 ]; then
+        PKG_FORCE_REBUILD=1 index_rebuild_all
+    else
+        index_rebuild_all
+    fi
     printf 'All packages are up to date.\n'
 }
 
 # ---------------------------------------------------------------- install
 install_one() {
-    local name="$1" idx="${2:-1}" entry base line ver arch fn sha sz url cache
+    local name="$1" idx="${2:-1}" keep_cache="${3:-${PKG_KEEP_CACHE:-0}}"
+    local entry base line ver arch fn sha sz url cache
     entry="$(index_lookup "$name")"
     [ -n "$entry" ] || die "unknown package: $name"
     base="${entry%%	*}"; line="${entry#*	}"
@@ -61,16 +76,34 @@ install_one() {
     url="$(cat "$PKG_INDEX/$base.url")/$fn"
     cache="$PKG_CACHE/$(basename "$fn")"
     fetch "$url" "$sha" "$cache" "$sz" "$idx"
+    install_cached_deb "$name" "$ver" "$arch" "$cache" "$keep_cache"
+}
+
+install_cached_deb() {
+    local name="$1" ver="$2" arch="$3" cache="$4" keep_cache="${5:-${PKG_KEEP_CACHE:-0}}"
+    if command -v python3 >/dev/null 2>&1 && [ -f "$PKG_LIB/pkg_core.py" ]; then
+        local cver; cver="$(deb_field "$cache" Version)"
+        [ -n "$cver" ] && ver="$cver"
+        printf 'Selecting previously unselected package %s.\n' "$name"
+        printf 'Preparing to unpack .../%s ...\n' "$(basename "$cache")"
+        printf 'Unpacking %s (%s) ...\n' "$name" "$ver"
+        local stage_args=()
+        [ "$keep_cache" = "1" ] && stage_args+=(--keep-cache)
+        python3 -B "$PKG_LIB/pkg_core.py" stage-install \
+            "$cache" "$PREFIX" "$PKG_ROOT" "$PKG_DB" "$name" "$ver" "$arch" "${stage_args[@]}" \
+            || die "$name: extract/install failed"
+        printf 'Setting up %s (%s) ...\n' "$name" "$ver"
+        return 0
+    fi
+
     local cver; cver="$(deb_field "$cache" Version)"
     [ -n "$cver" ] && ver="$cver"
     printf 'Selecting previously unselected package %s.\n' "$name"
-    printf 'Preparing to unpack .../%s ...\n' "$(basename "$fn")"
+    printf 'Preparing to unpack .../%s ...\n' "$(basename "$cache")"
     printf 'Unpacking %s (%s) ...\n' "$name" "$ver"
     deb_extract_data "$cache" "$PREFIX" "${PKG_DEB_STRIP:-6}" || die "$name: extract failed"
     local pkg_files
     pkg_files="$(deb_files "$cache")"
-    # Rewrite every Termux prefix only in the freshly extracted files (bin/helpers,
-    # dpkg .list, python/npm console scripts) before recording the package.
     if [ -n "$pkg_files" ]; then
         printf '%s\n' "$pkg_files" | sed "s|^|$PREFIX/|" | rewrite_prefix
         printf '%s\n' "$pkg_files" | db_put "$name" "$ver" "$arch"
@@ -78,7 +111,6 @@ install_one() {
         rewrite_prefix "$PREFIX"
         printf '' | db_put "$name" "$ver" "$arch"
     fi
-    # Auto-generate runtime bridge only for newly installed binaries in this package
     local runtime_bin="$PREFIX/../runtime/bin"
     if [ -d "$runtime_bin" ] && [ -n "$pkg_files" ]; then
         local p bname bin_file
@@ -86,9 +118,7 @@ install_one() {
             case "$p" in
                 bin/*)
                     bname="${p#bin/}"
-                    case "$bname" in
-                        */*|"") continue ;;
-                    esac
+                    case "$bname" in */*|"") continue ;; esac
                     bin_file="$PREFIX/bin/$bname"
                     [ -f "$bin_file" ] || [ -L "$bin_file" ] || continue
                     if [ ! -f "$runtime_bin/$bname" ]; then
@@ -114,25 +144,104 @@ EOF
         done <<< "$pkg_files"
     fi
     printf 'Setting up %s (%s) ...\n' "$name" "$ver"
+    [ "$keep_cache" = "1" ] || rm -f "$cache"
+}
+
+_execute_fast_plan() {
+    local mode="$1" keep_cache="$2"; shift 2
+    local plan_err="$PKG_ROOT/tmp/plan.err.$$"
+    local plan_out
+    if ! plan_out="$(python3 -B "$PKG_LIB/pkg_core.py" plan \
+            "$PREFIX" "$PKG_INDEX" "$PKG_DB" "$PKG_CACHE" "$@" 2>"$plan_err")"; then
+        local err_msg=""
+        [ -s "$plan_err" ] && err_msg="$(sed 's/^ERR[|\t]//' "$plan_err")"
+        rm -f "$plan_err"
+        die "${err_msg:-dependency/plan failure}"
+    fi
+    rm -f "$plan_err"
+
+    printf 'Reading package lists... Done\n'
+    printf 'Building dependency tree... Done\n'
+
+    local names=() pkg_rows=() fetch_rows=() total_bytes=0 kind
+    while IFS= read -r line; do
+        [ -n "$line" ] || continue
+        kind="${line%%|*}"
+        case "$kind" in
+            ALREADY)
+                local rest="${line#ALREADY|}"
+                local aname="${rest%%|*}" aver="${rest#*|}"
+                printf '%s is already the newest version (%s).\n' "$aname" "$aver"
+                ;;
+            SUMMARY)
+                local rest="${line#SUMMARY|}"
+                total_bytes="${rest#*|}"
+                ;;
+            PKG)
+                local rest="${line#PKG|}"
+                local name ver arch rel_fn url sz sha cache cached_ok
+                IFS='|' read -r name ver arch rel_fn url sz sha cache cached_ok <<< "$rest"
+                [ "$sha" = "-" ] && sha=""
+                names+=("$name")
+                pkg_rows+=("$name|$ver|$arch|$cache")
+                if [ "$cached_ok" != "1" ]; then
+                    fetch_rows+=("$name|$rel_fn|$url|${sha:--}|$cache|$sz")
+                fi
+                ;;
+        esac
+    done <<< "$plan_out"
+
+    if [ "${#names[@]}" -eq 0 ]; then
+        printf '0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded.\n'
+        return 0
+    fi
+
+    if [ "$mode" = "upgrade" ]; then
+        printf 'The following packages will be upgraded (and new dependencies installed):\n'
+    else
+        printf 'The following NEW packages will be installed:\n'
+    fi
+    printf '  %s\n' "${names[*]}"
+    if [ "${total_bytes:-0}" -gt 0 ] 2>/dev/null; then
+        printf 'Need to get %s of archives.\n' "$(human_size "$total_bytes")"
+    fi
+
+    if [ "${#fetch_rows[@]}" -gt 0 ]; then
+        printf '%s\n' "${fetch_rows[@]}" | fetch_batch
+    fi
+
+    local row
+    for row in "${pkg_rows[@]}"; do
+        local name ver arch cache
+        IFS='|' read -r name ver arch cache <<< "$row"
+        install_cached_deb "$name" "$ver" "$arch" "$cache" "$keep_cache"
+    done
 }
 
 cmd_install() {
     ensure_dirs; load_conf
-    db_sync_dpkg
-    [ -d "$PKG_DB" ] || mkdir -p "$PKG_DB"
-    index_rebuild_all
-
+    local keep_cache="${PKG_KEEP_CACHE:-0}"
     local pkgs=()
     for arg in "$@"; do
         case "$arg" in
             -y|--yes|-q|--quiet|-f|--fix-broken) ;; # apt compatibility flags
+            --keep-cache) keep_cache=1 ;;
             -*) die "unknown option: $arg" ;;
             *) pkgs+=("$arg") ;;
         esac
     done
 
     [ "${#pkgs[@]}" -ge 1 ] || die "install: need package name(s)"
-    [ -n "$(index_tsvs)" ] || die "no index (run: pkg update)"
+    [ -n "$(index_files)" ] || [ -n "$(index_tsvs)" ] || die "no index (run: pkg update)"
+
+    if command -v python3 >/dev/null 2>&1 && [ -f "$PKG_LIB/pkg_core.py" ]; then
+        _execute_fast_plan "install" "$keep_cache" "${pkgs[@]}"
+        return $?
+    fi
+
+    db_sync_dpkg
+    [ -d "$PKG_DB" ] || mkdir -p "$PKG_DB"
+    index_rebuild_all
 
     printf 'Reading package lists... Done\n'
     printf 'Building dependency tree... Done\n'
@@ -194,7 +303,7 @@ EOF
         [ -n "$n" ] || continue
         if db_exists "$n"; then continue; fi
         fetch_idx=$((fetch_idx + 1))
-        install_one "$n" "$fetch_idx"
+        install_one "$n" "$fetch_idx" "$keep_cache"
     done <<EOF
 $order
 EOF
@@ -202,6 +311,21 @@ EOF
 
 cmd_upgrade() {
     ensure_dirs; load_conf
+    local keep_cache="${PKG_KEEP_CACHE:-0}"
+    for arg in "$@"; do
+        case "$arg" in
+            -y|--yes|-q|--quiet|-f|--fix-broken) ;;
+            --keep-cache) keep_cache=1 ;;
+            -*) die "unknown option: $arg" ;;
+        esac
+    done
+    [ -n "$(index_files)" ] || [ -n "$(index_tsvs)" ] || die "no index (run: pkg update)"
+
+    if command -v python3 >/dev/null 2>&1 && [ -f "$PKG_LIB/pkg_core.py" ]; then
+        _execute_fast_plan "upgrade" "$keep_cache" --upgrade
+        return $?
+    fi
+
     db_sync_dpkg
     index_rebuild_all
     [ -n "$(index_tsvs)" ] || die "no index (run: pkg update)"
@@ -231,7 +355,7 @@ cmd_upgrade() {
     local idx=0
     for name in "${to_upgrade[@]}"; do
         idx=$((idx + 1))
-        install_one "$name" "$idx"
+        install_one "$name" "$idx" "$keep_cache"
     done
 }
 
@@ -275,7 +399,12 @@ cmd_remove() {
 
 # ---------------------------------------------------------------- queries
 cmd_list() {
+    ensure_dirs
     local pat="${1:-}" f
+    if command -v python3 >/dev/null 2>&1 && [ -f "$PKG_LIB/pkg_core.py" ]; then
+        python3 -B "$PKG_LIB/pkg_core.py" search "$PKG_INDEX" "$pat"
+        return $?
+    fi
     for f in $(index_files); do
         index_parse "$f" | awk -F'\t' -v p="$pat" 'p == "" || $1 ~ p { printf "%-24s %s\n", $1, $2 }'
     done | sort -u
@@ -300,8 +429,13 @@ cmd_info() {
 }
 
 cmd_search() {
+    ensure_dirs
     [ "$#" -ge 1 ] || die "search: need a pattern"
     local pat="$1" f
+    if command -v python3 >/dev/null 2>&1 && [ -f "$PKG_LIB/pkg_core.py" ]; then
+        python3 -B "$PKG_LIB/pkg_core.py" search "$PKG_INDEX" "$pat"
+        return $?
+    fi
     for f in $(index_files); do
         index_parse "$f" | awk -F'\t' -v p="$pat" '$1 ~ p { printf "%-24s %s\n", $1, $2 }'
     done | sort -u
@@ -319,9 +453,9 @@ cmd_help() {
     cat <<EOF
 pkg $PKG_VERSION -- tlx package manager
 
-  pkg update              fetch repository indexes
-  pkg upgrade             upgrade installed packages
-  pkg install <pkg...>    resolve, download, extract
+  pkg update              fetch repository indexes (conditional HTTP caching)
+  pkg upgrade [--keep-cache] upgrade installed packages & new deps
+  pkg install [--keep-cache] <pkg...>  resolve, parallel download, stage & extract
   pkg remove <pkg...>     remove installed packages
   pkg clean               remove cached .deb archives
   pkg list [regex]        available packages

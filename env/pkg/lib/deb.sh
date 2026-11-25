@@ -4,6 +4,10 @@
 
 # ar_members FILE -> member names
 ar_members() {
+    if command -v python3 >/dev/null 2>&1 && [ -f "${PKG_LIB:-}/pkg_core.py" ]; then
+        python3 -B "$PKG_LIB/pkg_core.py" deb-members "$1"
+        return $?
+    fi
     local file="$1" off=8 hdr name size data
     while :; do
         hdr="$(dd if="$file" bs=1 skip="$off" count=60 2>/dev/null)"
@@ -50,6 +54,10 @@ deb_member_name() { # FILE control|data
 }
 
 deb_field() { # FILE FIELD -> value (authoritative control)
+    if command -v python3 >/dev/null 2>&1 && [ -f "${PKG_LIB:-}/pkg_core.py" ]; then
+        python3 -B "$PKG_LIB/pkg_core.py" deb-field "$1" "$2"
+        return $?
+    fi
     local f="$1" field="$2" m control_path val
     m="$(deb_member_name "$f" control)"
     [ -n "$m" ] || return 1
@@ -63,6 +71,10 @@ deb_field() { # FILE FIELD -> value (authoritative control)
 }
 
 deb_validate_data() { # FILE -- reject absolute/traversal/non-prefix entries
+    if command -v python3 >/dev/null 2>&1 && [ -f "${PKG_LIB:-}/pkg_core.py" ]; then
+        python3 -B "$PKG_LIB/pkg_core.py" deb-validate "$1"
+        return $?
+    fi
     local m
     m="$(deb_member_name "$1" data)"
     [ -n "$m" ] || return 1
@@ -90,6 +102,10 @@ deb_validate_data() { # FILE -- reject absolute/traversal/non-prefix entries
 
 deb_extract_data() { # FILE DEST [STRIP]
     local m strip="${3:-${PKG_DEB_STRIP:-6}}"
+    if command -v python3 >/dev/null 2>&1 && [ -f "${PKG_LIB:-}/pkg_core.py" ]; then
+        python3 -B "$PKG_LIB/pkg_core.py" deb-extract "$1" "$2" --strip "$strip"
+        return $?
+    fi
     deb_validate_data "$1" || return 1
     m="$(deb_member_name "$1" data)"
     [ -n "$m" ] || return 1
@@ -98,6 +114,10 @@ deb_extract_data() { # FILE DEST [STRIP]
 
 deb_files() { # FILE -> relative paths under the stripped data prefix
     local m strip="${PKG_DEB_STRIP:-6}"
+    if command -v python3 >/dev/null 2>&1 && [ -f "${PKG_LIB:-}/pkg_core.py" ]; then
+        python3 -B "$PKG_LIB/pkg_core.py" deb-files "$1" --strip "$strip"
+        return $?
+    fi
     deb_validate_data "$1" || return 1
     m="$(deb_member_name "$1" data)"
     [ -n "$m" ] || return 1

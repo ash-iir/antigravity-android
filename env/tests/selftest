@@ -171,6 +171,266 @@ else
 fi
 rm -rf "$BRIDGE_TMP"
 
+# ---- Batch B: pkg_core.py staging validation, ELF patching, upgrade & fallback ----
+if command -v python3 >/dev/null 2>&1 && [ -f "$PKG_LIB/pkg_core.py" ]; then
+    SYN_TMP="$(mktemp -d)"
+    . "$PKG_LIB/fetch.sh"
+
+    # Helper to construct synthetic .deb (ar archive) with custom member paths/contents
+    python3 -B - "$SYN_TMP" <<'PY'
+import io, os, sys, tarfile, gzip, hashlib
+
+out_dir = sys.argv[1]
+
+def make_ar_entry(name: str, data: bytes) -> bytes:
+    hdr = f"{name:<16}{0:<12}{0:<6}{0:<6}{100644:<8}{len(data):<10}`\n".encode("ascii")
+    assert len(hdr) == 60
+    pad = b"\n" if len(data) % 2 == 1 else b""
+    return hdr + data + pad
+
+def make_tar_gz(entries):
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tf:
+        for item in entries:
+            kind = item[0]
+            path = item[1]
+            ti = tarfile.TarInfo(name=path)
+            if kind == "dir":
+                ti.type = tarfile.DIRTYPE
+                ti.mode = item[2] if len(item) > 2 else 0o755
+                tf.addfile(ti)
+            elif kind == "sym":
+                ti.type = tarfile.SYMTYPE
+                ti.linkname = item[2]
+                ti.mode = 0o777
+                tf.addfile(ti)
+            elif kind == "file":
+                data = item[2]
+                ti.type = tarfile.REGTYPE
+                ti.size = len(data)
+                ti.mode = item[3] if len(item) > 3 else 0o644
+                tf.addfile(ti, io.BytesIO(data))
+    return buf.getvalue()
+
+def build_deb(deb_path: str, control_txt: str, data_entries):
+    ctrl_gz = make_tar_gz([("file", "./control", control_txt.encode("utf-8"), 0o644)])
+    data_gz = make_tar_gz(data_entries)
+    ar = b"!<arch>\n" + make_ar_entry("debian-binary", b"2.0\n") + make_ar_entry("control.tar.gz", ctrl_gz) + make_ar_entry("data.tar.gz", data_gz)
+    with open(deb_path, "wb") as f:
+        f.write(ar)
+
+# 1. Deb omitting leading './' + dir symlink + ELF + text script
+elf_payload = b"\x7fELF" + b"\x00" * 12 + b"/data/data/com.termux/files/usr/lib/libfoo.so\x00" + b"TAIL"
+script_payload = b"#!/data/data/com.termux/files/usr/bin/sh\necho /data/user/0/com.termux/files/usr/share\n"
+build_deb(
+    os.path.join(out_dir, "nodot.deb"),
+    "Package: nodot\nVersion: 1.2.3\nArchitecture: aarch64\n",
+    [
+        ("dir", "data/data/com.termux/files/usr/bin", 0o755),
+        ("file", "data/data/com.termux/files/usr/bin/nodot", script_payload, 0o755),
+        ("dir", "data/data/com.termux/files/usr/lib/py3", 0o755),
+        ("file", "data/data/com.termux/files/usr/lib/py3/mod.py", b"x=1\n", 0o644),
+        ("sym", "data/data/com.termux/files/usr/lib/py", "py3"),
+        ("file", "data/data/com.termux/files/usr/bin/elfbin", elf_payload, 0o755),
+    ],
+)
+
+# 2. Traversal deb (../evil)
+build_deb(
+    os.path.join(out_dir, "traversal.deb"),
+    "Package: badtrav\nVersion: 1.0\nArchitecture: aarch64\n",
+    [
+        ("file", "./data/data/com.termux/files/usr/bin/goodfile", b"ok\n", 0o644),
+        ("file", "./data/data/com.termux/files/usr/bin/../../evil", b"pwn\n", 0o644),
+    ],
+)
+
+# 3. Escaping symlink deb (bin/bad -> ../../escape)
+build_deb(
+    os.path.join(out_dir, "badsym.deb"),
+    "Package: badsym\nVersion: 1.0\nArchitecture: aarch64\n",
+    [
+        ("file", "./data/data/com.termux/files/usr/bin/before", b"ok\n", 0o644),
+        ("sym", "./data/data/com.termux/files/usr/bin/bad", "../../escape"),
+    ],
+)
+PY
+
+    # 1a. Verify omitting './' does NOT strip bin/ or fail validation
+    if deb_validate_data "$SYN_TMP/nodot.deb" \
+            && [ "$(deb_files "$SYN_TMP/nodot.deb" | grep -c '^bin/nodot$')" = "1" ]; then
+        ok "deb without leading ./ keeps bin/ intact"
+    else
+        bad "deb without leading ./ keeps bin/ intact"
+    fi
+
+    # 1b. Verify stage-install handles dir symlink, text rewrite, byte-preserving ELF rewrite, and auto-clean
+    STG_PREFIX="$SYN_TMP/data/data/com.agy/files/usr"
+    mkdir -p "$STG_PREFIX"
+    cp "$SYN_TMP/nodot.deb" "$SYN_TMP/nodot_keep.deb"
+    if python3 -B "$PKG_LIB/pkg_core.py" stage-install \
+            "$SYN_TMP/nodot.deb" "$STG_PREFIX" "$SYN_TMP/pkgroot" "$SYN_TMP/pkgdb" nodot 1.2.3 aarch64 >/dev/null 2>&1 \
+            && [ -f "$STG_PREFIX/bin/nodot" ] \
+            && [ -L "$STG_PREFIX/lib/py" ] \
+            && grep -Fq "#!$STG_PREFIX/bin/sh" "$STG_PREFIX/bin/nodot" \
+            && [ ! -e "$SYN_TMP/nodot.deb" ]; then
+        ok "stage-install merges dir symlinks, rewrites text, auto-cleans deb"
+    else
+        bad "stage-install merges dir symlinks, rewrites text, auto-cleans deb"
+    fi
+
+    # Check ELF byte length preserved and rewritten to com.agy//// (10 chars)
+    if python3 -B - "$STG_PREFIX/bin/elfbin" <<'PY'
+import sys
+with open(sys.argv[1], "rb") as f:
+    d = f.read()
+expected = b"\x7fELF" + b"\x00" * 12 + b"/data/data/com.agy////files/usr/lib/libfoo.so\x00" + b"TAIL"
+assert len(d) == len(expected), (len(d), len(expected))
+assert d == expected, d
+PY
+    then
+        ok "ELF rewrite preserves exact byte length for com.agy"
+    else
+        bad "ELF rewrite preserves exact byte length for com.agy"
+    fi
+
+    # Check long package id (>10 chars, e.g. com.agy.dev) skips ELF rewrite without corrupting binary
+    LONG_PREFIX="$SYN_TMP/data/data/com.agy.dev/files/usr"
+    mkdir -p "$LONG_PREFIX"
+    if python3 -B "$PKG_LIB/pkg_core.py" stage-install \
+            "$SYN_TMP/nodot_keep.deb" "$LONG_PREFIX" "$SYN_TMP/pkgroot2" "$SYN_TMP/pkgdb2" nodot 1.2.3 aarch64 --keep-cache >/dev/null 2>&1 \
+            && [ -f "$SYN_TMP/nodot_keep.deb" ] \
+            && python3 -B - "$LONG_PREFIX/bin/elfbin" <<'PY'
+import sys
+with open(sys.argv[1], "rb") as f:
+    d = f.read()
+orig = b"\x7fELF" + b"\x00" * 12 + b"/data/data/com.termux/files/usr/lib/libfoo.so\x00" + b"TAIL"
+assert d == orig, d
+PY
+    then
+        ok "ELF rewrite safely skips longer pkg ids & --keep-cache retains deb"
+    else
+        bad "ELF rewrite safely skips longer pkg ids & --keep-cache retains deb"
+    fi
+
+    # 2. Traversal and escaping symlink must fail BEFORE touching PREFIX
+    ATK_PREFIX="$SYN_TMP/atk/files/usr"
+    mkdir -p "$ATK_PREFIX"
+    if ! deb_validate_data "$SYN_TMP/traversal.deb" 2>/dev/null \
+            && ! python3 -B "$PKG_LIB/pkg_core.py" stage-install \
+                "$SYN_TMP/traversal.deb" "$ATK_PREFIX" "$SYN_TMP/atkroot" "$SYN_TMP/atkdb" badtrav 1.0 aarch64 2>/dev/null \
+            && [ ! -e "$ATK_PREFIX/bin/goodfile" ] && [ ! -e "$SYN_TMP/atk/files/evil" ]; then
+        ok "traversal deb rejected before touching PREFIX"
+    else
+        bad "traversal deb rejected before touching PREFIX"
+    fi
+
+    if ! python3 -B "$PKG_LIB/pkg_core.py" stage-install \
+            "$SYN_TMP/badsym.deb" "$ATK_PREFIX" "$SYN_TMP/atkroot" "$SYN_TMP/atkdb" badsym 1.0 aarch64 2>/dev/null \
+            && [ ! -e "$ATK_PREFIX/bin/before" ] && [ ! -e "$ATK_PREFIX/bin/bad" ]; then
+        ok "escaping symlink rejected before touching PREFIX"
+    else
+        bad "escaping symlink rejected before touching PREFIX"
+    fi
+
+    # 3. pkg upgrade resolves newly added transitive dependency via pkg_core.py plan --upgrade
+    UPG_SANDBOX="$SYN_TMP/upg"
+    mkdir -p "$UPG_SANDBOX/usr/var/lib/pkg/installed" "$UPG_SANDBOX/usr/var/lib/pkg/index" "$UPG_SANDBOX/usr/var/lib/pkg/cache"
+    printf 'name=app\nversion=1.0\narch=aarch64\n' > "$UPG_SANDBOX/usr/var/lib/pkg/installed/app.meta"
+    : > "$UPG_SANDBOX/usr/var/lib/pkg/installed/app.files"
+    cat > "$UPG_SANDBOX/usr/var/lib/pkg/index/repo.1.Packages" <<'EOF'
+Package: newdep
+Version: 1.0
+Architecture: aarch64
+Filename: pool/main/n/newdep_1.0_aarch64.deb
+Size: 100
+
+Package: app
+Version: 2.0
+Architecture: aarch64
+Depends: newdep (>= 1.0)
+Filename: pool/main/a/app_2.0_aarch64.deb
+Size: 200
+EOF
+    printf 'https://example.invalid\n' > "$UPG_SANDBOX/usr/var/lib/pkg/index/repo.1.url"
+    upg_plan="$(python3 -B "$PKG_LIB/pkg_core.py" plan \
+        "$UPG_SANDBOX/usr" "$UPG_SANDBOX/usr/var/lib/pkg/index" \
+        "$UPG_SANDBOX/usr/var/lib/pkg/installed" "$UPG_SANDBOX/usr/var/lib/pkg/cache" --upgrade 2>/dev/null || true)"
+    upg_order="$(printf '%s\n' "$upg_plan" | awk -F'|' '$1=="PKG"{print $2}' | tr '\n' ' ')"
+    if [ "$upg_order" = "newdep app " ]; then
+        ok "pkg upgrade plan pulls new transitive dependency before app"
+    else
+        bad "pkg upgrade plan pulls new transitive dependency ($upg_order)"
+    fi
+
+    # 4. fetch_batch per-file fallback across local HTTP mirrors
+    if command -v curl >/dev/null 2>&1; then
+        FB_TMP="$SYN_TMP/fetch_fb"
+        mkdir -p "$FB_TMP/m1/pool" "$FB_TMP/m2/pool" "$FB_TMP/cache"
+        printf 'GOOD_ARCHIVE_BYTES\n' > "$FB_TMP/m1/pool/good.deb"
+        printf 'CORRUPT_ON_M1\n' > "$FB_TMP/m1/pool/bad.deb"
+        printf 'VALID_ON_M2\n' > "$FB_TMP/m2/pool/bad.deb"
+        sha_good="$(python3 -B -c 'import hashlib,sys;print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$FB_TMP/m1/pool/good.deb")"
+        sha_bad="$(python3 -B -c 'import hashlib,sys;print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$FB_TMP/m2/pool/bad.deb")"
+
+        python3 -B - "$FB_TMP" <<'PY' &
+import functools, http.server, os, sys
+root = sys.argv[1]
+log_path = os.path.join(root, "req.log")
+class Handler(http.server.SimpleHTTPRequestHandler):
+    def log_message(self, fmt, *args):
+        with open(log_path, "a") as lf:
+            lf.write((fmt % args) + "\n")
+    def translate_path(self, path):
+        rel = path.lstrip("/")
+        return os.path.join(root, rel)
+srv = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+with open(os.path.join(root, "port"), "w") as pf:
+    pf.write(str(srv.server_address[1]))
+srv.timeout = 10
+for _ in range(20):
+    if os.path.exists(os.path.join(root, "stop")):
+        break
+    srv.handle_request()
+PY
+        SRV_PID=$!
+        for _ in $(seq 1 40); do
+            [ -s "$FB_TMP/port" ] && break
+            sleep 0.05
+        done
+        if [ -s "$FB_TMP/port" ]; then
+            FB_PORT="$(cat "$FB_TMP/port")"
+            PKG_REPOS=("http://127.0.0.1:$FB_PORT/m1" "http://127.0.0.1:$FB_PORT/m2")
+            PKG_CACHE="$FB_TMP/cache"
+            PKG_ROOT="$FB_TMP/pkgroot"
+            PKG_CERT=""
+            fetch_ok=0
+            if printf 'good|pool/good.deb|%s/pool/good.deb|%s|%s/good.deb|18\nbad|pool/bad.deb|%s/pool/bad.deb|%s|%s/bad.deb|12\n' \
+                    "${PKG_REPOS[0]}" "$sha_good" "$PKG_CACHE" "${PKG_REPOS[0]}" "$sha_bad" "$PKG_CACHE" \
+                    | fetch_batch >/dev/null 2>&1; then
+                fetch_ok=1
+            fi
+            touch "$FB_TMP/stop"
+            curl -s "http://127.0.0.1:$FB_PORT/stop" >/dev/null 2>&1 || true
+            wait "$SRV_PID" 2>/dev/null || true
+            if [ "$fetch_ok" = "1" ] \
+                    && [ "$(cat "$PKG_CACHE/good.deb")" = "GOOD_ARCHIVE_BYTES" ] \
+                    && [ "$(cat "$PKG_CACHE/bad.deb")" = "VALID_ON_M2" ] \
+                    && grep -Fq "/m2/pool/bad.deb" "$FB_TMP/req.log" \
+                    && ! grep -Fq "/m2/pool/good.deb" "$FB_TMP/req.log"; then
+                ok "fetch_batch retries only failed files on next mirror"
+            else
+                bad "fetch_batch retries only failed files on next mirror"
+            fi
+        else
+            kill "$SRV_PID" 2>/dev/null || true
+            bad "fetch_batch test HTTP server startup"
+        fi
+    fi
+
+    rm -rf "$SYN_TMP"
+fi
+
 rm -rf "$(dirname "$PREFIX")"
 printf '== failures: %s ==\n' "$fail"
 [ "$fail" = 0 ]
