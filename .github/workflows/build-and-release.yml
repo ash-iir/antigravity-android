@@ -151,19 +151,19 @@ jobs:
 
             ---
 
-            ### Key Highlights in this Release
+            ### What's New in v2.34.12
 
-            * **Built-in Web Terminal & PTY Support (PR #19):** Enabled native built-in web terminal on Android userspace via length-preserving PTY shell binary patching (`/bin/bash` -> `/bin///sh`), resilient prioritized shell fallback hierarchy (`$PREFIX/bin/bash` -> `runtime/bin/bash` -> `/system/bin/sh`), and proper `TERM=xterm-256color` / `TERMINFO` environment configuration.
-            * **AAPT Build Reliability:** Fixed `aapt` crash with `SIGABRT (134)` on Android ARM64 userspace builds by ensuring `ANDROID_DATA` environment export.
-            * **Security Hardening (Issue #6):** Completely removed hardcoded `android:debuggable="true"` from production builds, preventing unauthorized access to OAuth credentials and internal user files via `run-as`. Dev builds now isolate debuggable flags to `--dev` builds.
-            * **Media & File Picker Overhaul (Issue #8):** Replaced SAF-only document picker with universal native Android chooser. Users can now attach photos, videos, and files directly from Gallery, Google Photos, or File Managers with automatic persistent URI permissions.
-            * **OAuth & Browser Redirection Streamlined:** Completely eliminated 80ms disk polling and temporary files. Direct stdout capture and clean native browser intent dispatching without AIDL overhead or IPC deadlocks.
-            * **ARMv8.0-A CPU Architecture & SIMD Emulation:** Added transparent atomic & SIMD emulation (`liblse_compat.so`) for FEAT_LSE, FEAT_RDM, and FEAT_FCMA, resolving `FATAL ERROR: This binary was compiled with lse enabled` and `SIGILL` crashes on Snapdragon 685 (Cortex-A53 / Redmi Note 12).
-            * **Torch / Flashlight Hardware Bridge:** Integrated hardware torch control bridge and CLI utility (`torch on/off`).
-            * **Integrated Log Export & Diagnostics:** Added "Copy Logs" and "Save Logs" actions to the startup failure splash overlay for one-tap troubleshooting.
-            * **Autonomous Background Micro-Daemon (`agy-daemon`):** Background task engine with triggers for delays, intervals, file watching, and GitHub notifications.
+            * **Faster `pkg` Package Manager (`pkg_core.py`):** Added mtime-cached `dpkg`/`Packages` indexing, full DFS dependency & upgrade planning with disk-space preflight, conditional `curl -z` updates, parallel `curl -Z --http2` downloads with per-file SHA256 mirror fallback, single-pass staged `.deb` validation/extraction with byte-length-preserving ELF prefix rewriting, `--keep-cache` flag, and de-prioritized `tuna` fallback in `repo.conf`.
+            * **Security Hardening & Lifecycle Stability:** Added per-boot bearer token auth to `SystemGatewayServer` and token gating to mutating `AndroidBridge` calls, bounded `/exec` concurrency and timeouts, pinned WebView localhost TLS to the active loopback core certificate, hardened `agy-daemon` with `fcntl.flock` on persistent `daemon.lock` + deduplicated logging, fixed `SplashController` WebView teardown on dismiss, added clickable `ForegroundNotification` resume intent, and capped crash/stderr logs.
+            * **Quick Controls, Root & UI Features:** Added curated `QuickControlSheet` (Restart Core, Log export, Desktop Mode, WakeLock toggle, Root/Anti-Kill, Update Check) with a hideable/edge-snap AGY pill and passive 24h `UpdateChecker`, clipboard/IME image paste in chat, native `RootBridge`/`RootResilience` (`agy-root`, `su`, `sudo`, `agy-sys`), and hardened Go TLS/DNS + `FileDownloader` blob spill recovery.
+
+            ### Foundation Highlights
+
+            * **Built-in Web Terminal & PTY Support (PR #19):** Enabled native built-in web terminal on Android userspace via length-preserving PTY shell binary patching (`/bin/bash` -> `/bin///sh`), prioritized shell fallback hierarchy (`$PREFIX/bin/bash` -> `runtime/bin/bash` -> `/system/bin/sh`), and proper `TERM=xterm-256color` / `TERMINFO` configuration.
+            * **ARMv8.0-A CPU & SIMD Emulation (`liblse_compat.so`):** Transparent `SIGILL` emulation for `FEAT_LSE`, `FEAT_RDM`, `FEAT_LRCPC`, and `FEAT_FCMA` on Snapdragon 680/685 / Cortex-A53 devices.
+            * **Universal Media & File Picker + Micro-Daemon:** Persistent URI intent picker for images/videos/files, hardware `torch` bridge, and lightweight background scheduler (`agy-daemon` / `agy-notify`).
 
             ---
 
             > [!NOTE]
-            > **Seamless Upgrades:** Built with the consistent embedded signing keystore. You can install this update directly over previous v2.x releases without uninstalling or losing local projects.
+            > **Seamless Upgrades:** Built with the consistent embedded signing keystore (`APP_VERSION_CODE=23412`). You can install this update directly over previous v2.x releases without uninstalling or losing local projects.
