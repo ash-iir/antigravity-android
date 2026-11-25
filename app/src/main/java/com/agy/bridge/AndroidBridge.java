@@ -4,6 +4,7 @@ import android.content.Context;
 import android.webkit.JavascriptInterface;
 
 import com.agy.runtime.RuntimeManager;
+import com.agy.shell.RootBridge;
 import com.agy.shell.ShizukuBridge;
 import com.agy.theme.ThemeManager;
 import com.agy.ui.MainActivity;
@@ -30,10 +31,15 @@ public final class AndroidBridge {
 
     public AndroidBridge(Context context, RuntimeManager runtime,
                          ShizukuBridge shizuku, ThemeManager theme) {
+        this(context, runtime, shizuku, RootBridge.getShared(context), theme);
+    }
+
+    public AndroidBridge(Context context, RuntimeManager runtime,
+                         ShizukuBridge shizuku, RootBridge root, ThemeManager theme) {
         this.appContext = context.getApplicationContext();
         this.themeBridge = new ThemeBridge(theme);
         this.engine = new EngineBridge(runtime);
-        this.config = new EngineConfigJson(this.appContext, runtime, engine, shizuku, themeBridge);
+        this.config = new EngineConfigJson(this.appContext, runtime, engine, shizuku, root, themeBridge);
     }
 
     /** Host activity, used to dismiss the native splash once the UI has painted. */

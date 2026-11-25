@@ -1,0 +1,163 @@
+#!/system/bin/sh
+# agy-sys -- Root power-user helper for Antigravity (KernelSU/bakaSU/Magisk/APatch).
+# Wraps system diagnostics, Doze/OOM anti-kill protection, module listing,
+# APK installation, logcat, and /storage/emulated/0/Android/data access via agy-root.
+
+unset LD_PRELOAD LD_LIBRARY_PATH
+set -u
+
+BASEDIR="$(CDPATH= cd -- "$(dirname -- "$0")" 2>/dev/null && pwd)"
+AGY_ROOT="$BASEDIR/agy-root"
+[ ! -x "$AGY_ROOT" ] && [ -n "${PREFIX:-}" ] && AGY_ROOT="$PREFIX/bin/agy-root"
+PKG="${AGY_APPLICATION_ID:-com.agy}"
+
+sh_quote() {
+  printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"
+}
+
+show_help() {
+  cat <<'EOF'
+Usage: agy-sys <subcommand> [args...]
+
+Subcommands:
+  info                    Show Android, kernel, root manager, RAM, Doze & OOM status
+  protect                 Whitelist Antigravity from Doze & protect PIDs from LMKD (oom_score_adj=-100)
+  modules                 List installed KernelSU / bakaSU / Magisk modules (/data/adb/modules)
+  install <path.apk>      Silently install/upgrade an APK via pm install -r
+  logcat [lines]          Show recent Android logcat filtered for Antigravity / crashes (default: 120)
+  android-data [subpath]  List /storage/emulated/0/Android/data[/subpath] using global mount namespace (-mm)
+  help                    Show this help message
+
+Note: For backups and state preservation, use 'agy-upgrade backup|restore|list'.
+EOF
+}
+
+cmd_info() {
+  echo "=== Antigravity System Info ==="
+  echo "Package:  $PKG"
+  echo "Android:  $(/system/bin/getprop ro.build.version.release 2>/dev/null || echo unknown) (API $(/system/bin/getprop ro.build.version.sdk 2>/dev/null || echo ?))"
+  echo "Device:   $(/system/bin/getprop ro.product.manufacturer 2>/dev/null || true) $(/system/bin/getprop ro.product.model 2>/dev/null || true)"
+  echo "Kernel:   $(uname -r 2>/dev/null || echo unknown)"
+  _se="$(/system/bin/getenforce 2>/dev/null || true)"
+  [ -z "$_se" ] && _se="$("$AGY_ROOT" -c '/system/bin/getenforce' 2>/dev/null || true)"
+  echo "SELinux:  ${_se:-unknown}"
+  echo ""
+  echo "=== Root Status ==="
+  "$AGY_ROOT" status || true
+  echo ""
+  echo "=== Memory ==="
+  grep -E '^(MemTotal|MemAvailable|SwapTotal|SwapFree):' /proc/meminfo 2>/dev/null || true
+  echo ""
+  echo "=== Process OOM & Doze ==="
+  "$AGY_ROOT" -c "
+    PKG=$(sh_quote "$PKG")
+    echo -n 'Doze whitelisted: '
+    if /system/bin/dumpsys deviceidle whitelist 2>/dev/null | grep -q \"\$PKG\"; then
+      echo 'yes'
+    else
+      echo 'no (run: agy-sys protect)'
+    fi
+    for d in /proc/[0-9]*; do
+      cl=\"\$(tr '\\0' ' ' < \"\$d/cmdline\" 2>/dev/null || true)\"
+      case \"\$cl\" in *\"\$PKG\"*|*language_server*|*libloader*|*agy-daemon*)
+        p=\"\${d#/proc/}\"
+        adj=\"\$(cat \"\$d/oom_score_adj\" 2>/dev/null || echo '?')\"
+        echo \"  PID \$p (oom_score_adj=\$adj): \$(printf '%.70s' \"\$cl\")\"
+      ;; esac
+    done
+  " 2>/dev/null || echo "  (grant root for Doze/OOM inspection)"
+}
+
+cmd_protect() {
+  "$AGY_ROOT" -c "
+    PKG=$(sh_quote "$PKG")
+    if /system/bin/cmd deviceidle whitelist +\"\$PKG\" >/dev/null 2>&1 || /system/bin/dumpsys deviceidle whitelist +\"\$PKG\" >/dev/null 2>&1; then
+      echo \"[OK] Added \$PKG to Android Doze whitelist\"
+    else
+      echo \"[WARN] Could not update Doze whitelist\"
+    fi
+    COUNT=0
+    for d in /proc/[0-9]*; do
+      cl=\"\$(tr '\\0' ' ' < \"\$d/cmdline\" 2>/dev/null || true)\"
+      case \"\$cl\" in *\"\$PKG\"*|*language_server*|*libloader*|*agy-daemon*)
+        p=\"\${d#/proc/}\"
+        if echo -100 > \"\$d/oom_score_adj\" 2>/dev/null; then
+          echo \"[OK] Protected PID \$p (oom_score_adj=-100)\"
+          COUNT=\$((COUNT+1))
+        fi
+      ;; esac
+    done
+    echo \"Done. Protected \$COUNT process(es).\"
+  "
+}
+
+cmd_modules() {
+  "$AGY_ROOT" -mm -c '
+    MODS="/data/adb/modules"
+    if [ ! -d "$MODS" ]; then
+      echo "No module directory found at $MODS"
+      exit 0
+    fi
+    found=0
+    for m in "$MODS"/*; do
+      [ -d "$m" ] || continue
+      found=1
+      id="$(basename "$m")"
+      name="$(grep -m1 "^name=" "$m/module.prop" 2>/dev/null | cut -d= -f2-)"
+      ver="$(grep -m1 "^version=" "$m/module.prop" 2>/dev/null | cut -d= -f2-)"
+      state="enabled"
+      [ -f "$m/disable" ] && state="disabled"
+      [ -f "$m/remove" ] && state="pending-remove"
+      printf "  %-24s %-16s [%s] %s\n" "$id" "${ver:-?}" "$state" "${name:-}"
+    done
+    [ "$found" = "0" ] && echo "No modules installed in $MODS"
+  '
+}
+
+cmd_install() {
+  if [ $# -lt 1 ]; then
+    echo "Usage: agy-sys install <path.apk>" >&2
+    exit 2
+  fi
+  APK="$1"
+  if [ ! -f "$APK" ]; then
+    echo "agy-sys: file not found: $APK" >&2
+    exit 1
+  fi
+  "$AGY_ROOT" --fallback-rish -mm -c "/system/bin/pm install -r $(sh_quote "$APK")"
+}
+
+cmd_logcat() {
+  LINES="${1:-120}"
+  "$AGY_ROOT" --fallback-rish -c "/system/bin/logcat -d -t $(sh_quote "$LINES") | grep -iE 'agy|MainActivity|CoreServer|RootBridge|AndroidRuntime|FATAL|LMKD' || true"
+}
+
+cmd_android_data() {
+  SUB="${1:-}"
+  TARGET="/storage/emulated/0/Android/data"
+  [ -n "$SUB" ] && TARGET="$TARGET/$SUB"
+  "$AGY_ROOT" --fallback-rish -mm -c "ls -la $(sh_quote "$TARGET")"
+}
+
+if [ $# -eq 0 ]; then
+  show_help
+  exit 0
+fi
+
+SUBCMD="$1"
+shift
+
+case "$SUBCMD" in
+  info)         cmd_info "$@" ;;
+  protect)      cmd_protect "$@" ;;
+  modules)      cmd_modules "$@" ;;
+  install)      cmd_install "$@" ;;
+  logcat)       cmd_logcat "$@" ;;
+  android-data) cmd_android_data "$@" ;;
+  -h|--help|help) show_help ;;
+  *)
+    echo "agy-sys: unknown subcommand '$SUBCMD'" >&2
+    show_help >&2
+    exit 2
+    ;;
+esac

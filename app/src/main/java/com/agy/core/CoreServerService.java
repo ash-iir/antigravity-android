@@ -60,6 +60,7 @@ public final class CoreServerService extends Service {
         supervisor.start();
 
         startBackgroundDaemon();
+        com.agy.shell.RootResilience.applyProtectionAsync(this, null, 3000L);
     }
 
     private void startBackgroundDaemon() {

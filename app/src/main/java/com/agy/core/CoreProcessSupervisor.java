@@ -213,6 +213,7 @@ public final class CoreProcessSupervisor {
                 String readyStatus = "core ready on 127.0.0.1:" + port;
                 Log.i(TAG, readyStatus);
                 CoreLogWriter.writeLine(log, readyStatus);
+                com.agy.shell.RootResilience.applyProtectionAsync(appContext, null, 500L);
                 return true;
             }
         }

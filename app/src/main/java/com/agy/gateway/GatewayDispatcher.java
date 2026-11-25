@@ -4,6 +4,9 @@ import android.content.Context;
 import com.agy.gateway.handlers.*;
 import com.agy.log.CrashRecorder;
 import com.agy.log.LogRingBuffer;
+import com.agy.shell.RootBridge;
+import com.agy.shell.RootManagerInfo;
+import com.agy.shell.ShizukuBridge;
 import org.json.JSONObject;
 
 /**
@@ -18,6 +21,8 @@ public final class GatewayDispatcher {
     private final DeviceHandler deviceHandler;
     private final LogRingBuffer logBuffer;
     private final com.agy.log.CommandHistory commandHistory;
+    private final RootBridge rootBridge;
+    private final ShizukuBridge shizukuBridge;
     private final ExecHandler execHandler;
 
     public GatewayDispatcher(Context context, LogRingBuffer logBuffer) {
@@ -28,6 +33,8 @@ public final class GatewayDispatcher {
         this.deviceHandler = new DeviceHandler(context);
         this.logBuffer = logBuffer;
         this.commandHistory = new com.agy.log.CommandHistory();
+        this.rootBridge = RootBridge.getShared(context);
+        this.shizukuBridge = new ShizukuBridge(context);
         this.execHandler = new ExecHandler(context, this.commandHistory, logBuffer);
     }
 
@@ -62,6 +69,21 @@ public final class GatewayDispatcher {
                 return logsResp;
             case "exec":
                 return execHandler.handle(payload);
+            case "root_status":
+                JSONObject rootResp = new JSONObject();
+                try {
+                    boolean refresh = payload.optBoolean("refresh", false);
+                    RootManagerInfo info = rootBridge.probe(refresh);
+                    rootResp.put("ok", true);
+                    rootResp.put("root", info.toJson());
+                    rootResp.put("shizukuAvailable", shizukuBridge.isAvailable());
+                } catch (Exception e) {
+                    try {
+                        rootResp.put("ok", false);
+                        rootResp.put("error", e.getMessage());
+                    } catch (Exception ignored) {}
+                }
+                return rootResp;
             case "commands":
                 JSONObject cmdResp = new JSONObject();
                 try {

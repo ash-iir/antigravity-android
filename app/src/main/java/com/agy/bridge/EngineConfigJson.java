@@ -4,6 +4,8 @@ import android.content.Context;
 
 import com.agy.runtime.RuntimeConfig;
 import com.agy.runtime.RuntimeManager;
+import com.agy.shell.RootBridge;
+import com.agy.shell.RootManagerInfo;
 import com.agy.shell.ShizukuBridge;
 
 import org.json.JSONObject;
@@ -15,19 +17,27 @@ public final class EngineConfigJson {
     private final RuntimeManager runtime;
     private final EngineBridge engine;
     private final ShizukuBridge shizuku;
+    private final RootBridge root;
     private final ThemeBridge theme;
 
     public EngineConfigJson(Context appContext, RuntimeManager runtime, EngineBridge engine,
                             ShizukuBridge shizuku, ThemeBridge theme) {
+        this(appContext, runtime, engine, shizuku, RootBridge.getShared(appContext), theme);
+    }
+
+    public EngineConfigJson(Context appContext, RuntimeManager runtime, EngineBridge engine,
+                            ShizukuBridge shizuku, RootBridge root, ThemeBridge theme) {
         this.appContext = appContext;
         this.runtime = runtime;
         this.engine = engine;
         this.shizuku = shizuku;
+        this.root = root != null ? root : RootBridge.getShared(appContext);
         this.theme = theme;
     }
 
     public String get() {
         try {
+            RootManagerInfo rootInfo = root.getCachedOrFastInfo();
             JSONObject o = new JSONObject();
             o.put("productName", "antigravity-app");
             o.put("csrfToken", engine.getCsrfToken());
@@ -44,6 +54,11 @@ public final class EngineConfigJson {
             o.put("tmpDir", appContext.getCacheDir().getAbsolutePath());
             o.put("appDataDir", runtime.getAppDataDir().getAbsolutePath());
             o.put("shizukuAvailable", shizuku.isAvailable());
+            o.put("rootAvailable", rootInfo.granted);
+            o.put("rootManager", rootInfo.managerType);
+            o.put("rootVersion", rootInfo.suVersion);
+            o.put("rootMountMaster", rootInfo.mountMasterSupported);
+            o.put("rootGuidance", rootInfo.guidance);
             o.put("theme", theme.getTheme());
             return o.toString();
         } catch (Exception e) {

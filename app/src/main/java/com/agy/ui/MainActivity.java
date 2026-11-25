@@ -29,6 +29,7 @@ import com.agy.core.CoreServiceLauncher;
 import com.agy.oauth.OAuthManager;
 import com.agy.oauth.OAuthTokenStore;
 import com.agy.runtime.RuntimeManager;
+import com.agy.shell.RootBridge;
 import com.agy.shell.ShizukuBridge;
 import com.agy.theme.ThemeManager;
 import com.agy.ui.lifecycle.AppLifecycle;
@@ -72,6 +73,7 @@ public class MainActivity extends Activity
     private OAuthManager oauthManager;
     private RuntimeManager runtimeManager;
     private ShizukuBridge shizukuBridge;
+    private RootBridge rootBridge;
     private AndroidBridge androidBridge;
     private WebViewHost webViewHost;
     private SplashController splash;
@@ -177,7 +179,9 @@ public class MainActivity extends Activity
         oauthManager = new OAuthManager();
         runtimeManager = new RuntimeManager(this);
         shizukuBridge = new ShizukuBridge(this);
-        androidBridge = new AndroidBridge(this, runtimeManager, shizukuBridge, themeManager);
+        rootBridge = RootBridge.getShared(this);
+        rootBridge.probeAsync(false);
+        androidBridge = new AndroidBridge(this, runtimeManager, shizukuBridge, rootBridge, themeManager);
         androidBridge.setActivity(this);
         webViewHost = new WebViewHost(this, themeManager, oauthManager, androidBridge, this);
         webViewHost.setListener(this);

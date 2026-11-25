@@ -1,0 +1,35 @@
+#!/system/bin/sh
+# su -- KernelSU / bakaSU / Magisk / APatch aware su wrapper for Antigravity.
+# Clears LD_LIBRARY_PATH and LD_PRELOAD so system su binaries never link against
+# Bionic/Termux compat libraries, and surfaces manager-specific setup guidance.
+
+unset LD_LIBRARY_PATH LD_PRELOAD
+
+CLEAN_SYS_PATH="/system/bin:/sbin:/vendor/bin:/system/xbin:/debug_ramdisk:/su/bin"
+
+for p in /system/bin/su /sbin/su /debug_ramdisk/su /system/xbin/su /vendor/bin/su /su/bin/su /magisk/.core/bin/su; do
+  if [ -x "$p" ]; then
+    PATH="$CLEAN_SYS_PATH" exec "$p" "$@"
+  fi
+done
+
+# KernelSU / bakaSU can intercept execve("/system/bin/su") even when stat() hides it.
+# Probe once cleanly before reporting guidance.
+_id_out="$(PATH="$CLEAN_SYS_PATH" /system/bin/su -c id 2>/dev/null || true)"
+case "$_id_out" in
+  *uid=0*)
+    PATH="$CLEAN_SYS_PATH" exec /system/bin/su "$@"
+    ;;
+esac
+
+_pkg="${AGY_APPLICATION_ID:-com.agy}"
+cat >&2 <<EOF
+su: root access is not granted to Antigravity ($_pkg).
+  - Using KernelSU / bakaSU (or another KernelSU fork)?
+    Grant Superuser access to Antigravity ($_pkg) in your root manager first, then restart the app.
+  - Using the Sui module?
+    Allow Antigravity ($_pkg) in Sui / Shizuku Manager, then restart the app.
+  - Using Magisk or APatch?
+    Grant Superuser access in your root manager and retry.
+EOF
+exit 126

@@ -1,0 +1,271 @@
+#!/system/bin/sh
+# agy-root -- Antigravity native root (uid=0) execution wrapper.
+# Supports KernelSU / bakaSU / KernelSU-Next / SukiSU, Magisk, APatch, and generic su.
+# Preserves $HOME, $PREFIX, $TMPDIR, TLS certs, and AGY runtime/bin on PATH while
+# keeping Android system binaries free of Bionic LD_LIBRARY_PATH / LD_PRELOAD conflicts.
+
+unset LD_PRELOAD LD_LIBRARY_PATH
+set -u
+
+BASEDIR="$(CDPATH= cd -- "$(dirname -- "$0")" 2>/dev/null && pwd)"
+if [ -z "${PREFIX:-}" ]; then
+  PREFIX="$(CDPATH= cd -- "$BASEDIR/.." 2>/dev/null && pwd)"
+fi
+if [ -z "${HOME:-}" ]; then
+  HOME="$(CDPATH= cd -- "$PREFIX/.." 2>/dev/null && pwd)"
+fi
+TMPDIR="${TMPDIR:-$PREFIX/tmp}"
+AGY_APPLICATION_ID="${AGY_APPLICATION_ID:-}"
+if [ -z "$AGY_APPLICATION_ID" ]; then
+  _app_files="${PREFIX%/usr}"
+  _app_dir="${_app_files%/files}"
+  AGY_APPLICATION_ID="${_app_dir##*/}"
+  unset _app_files _app_dir
+fi
+[ -z "$AGY_APPLICATION_ID" ] && AGY_APPLICATION_ID="com.agy"
+
+CLEAN_SYS_PATH="/system/bin:/sbin:/vendor/bin:/system/xbin:/debug_ramdisk:/su/bin"
+
+sh_quote() {
+  printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"
+}
+
+print_root_guidance() {
+  cat >&2 <<EOF
+agy-root: root access (uid=0) is not granted to Antigravity ($AGY_APPLICATION_ID).
+
+How to enable root access:
+  - KernelSU / bakaSU / KernelSU-Next / SukiSU:
+      Open your KernelSU / bakaSU Manager, grant Superuser access to
+      Antigravity ($AGY_APPLICATION_ID), then fully restart Antigravity.
+  - Sui module (Magisk / KernelSU Shizuku module):
+      Allow Antigravity ($AGY_APPLICATION_ID) in Sui / Shizuku Manager,
+      then restart Antigravity (you can also use 'rish -c "<cmd>"').
+  - Magisk / APatch:
+      Grant Superuser access to Antigravity in the manager app and retry.
+EOF
+}
+
+find_working_su() {
+  for cand in /system/bin/su /sbin/su /debug_ramdisk/su /system/xbin/su /vendor/bin/su /su/bin/su su; do
+    if [ "$cand" != "su" ] && [ ! -e "$cand" ] && [ "$cand" != "/system/bin/su" ]; then
+      continue
+    fi
+    _id_out="$(env -u LD_PRELOAD -u LD_LIBRARY_PATH PATH="$CLEAN_SYS_PATH" "$cand" -c id 2>/dev/null || true)"
+    case "$_id_out" in
+      *uid=0*)
+        printf '%s\n' "$cand"
+        return 0
+        ;;
+    esac
+  done
+  return 1
+}
+
+check_mount_master() {
+  _su="$1"
+  _mm_out="$(env -u LD_PRELOAD -u LD_LIBRARY_PATH PATH="$CLEAN_SYS_PATH" "$_su" -mm -c id 2>/dev/null || true)"
+  case "$_mm_out" in
+    *uid=0*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+classify_manager() {
+  _ver="$1"
+  _ctx="$2"
+  _low="$(printf '%s %s' "$_ver" "$_ctx" | tr 'ABCDEFGHIJKLMNOPQRSTUVWXYZ' 'abcdefghijklmnopqrstuvwxyz')"
+  case "$_low" in
+    *bakasu*) printf 'bakasu' ;;
+    *kernelsu*|*u:r:ksu*) printf 'kernelsu' ;;
+    *apatch*) printf 'apatch' ;;
+    *magisk*) printf 'magisk' ;;
+    *) printf 'su' ;;
+  esac
+}
+
+json_escape() {
+  printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g' | tr '\n' ' '
+}
+
+show_status() {
+  _json="${1:-0}"
+  _su="$(find_working_su || true)"
+  if [ -n "$_su" ]; then
+    _ver="$(env -u LD_PRELOAD -u LD_LIBRARY_PATH PATH="$CLEAN_SYS_PATH" "$_su" -v 2>/dev/null | head -n 1 || true)"
+    _id="$(env -u LD_PRELOAD -u LD_LIBRARY_PATH PATH="$CLEAN_SYS_PATH" "$_su" -c id 2>/dev/null | head -n 1 || true)"
+    _mm="false"
+    if check_mount_master "$_su"; then
+      _mm="true"
+    fi
+    _mgr="$(classify_manager "$_ver" "$_id")"
+    if [ "$_json" = "1" ]; then
+      printf '{"granted":true,"suPath":"%s","suVersion":"%s","managerType":"%s","id":"%s","mountMasterSupported":%s}\n' \
+        "$(json_escape "$_su")" "$(json_escape "$_ver")" "$(json_escape "$_mgr")" "$(json_escape "$_id")" "$_mm"
+    else
+      echo "Root status: GRANTED (uid=0)"
+      echo "Manager:     $_mgr"
+      echo "su binary:   $_su"
+      [ -n "$_ver" ] && echo "su version:  $_ver"
+      echo "Identity:    $_id"
+      echo "Mount master (-mm): $_mm"
+    fi
+    return 0
+  else
+    if [ "$_json" = "1" ]; then
+      printf '{"granted":false,"suPath":"","suVersion":"","managerType":"none","mountMasterSupported":false,"package":"%s","guidance":"Grant Superuser to %s in KernelSU/bakaSU Manager (or allow in Sui/Shizuku) and restart Antigravity."}\n' \
+        "$(json_escape "$AGY_APPLICATION_ID")" "$(json_escape "$AGY_APPLICATION_ID")"
+    else
+      echo "Root status: NOT GRANTED"
+      print_root_guidance
+    fi
+    return 1
+  fi
+}
+
+show_help() {
+  cat <<'EOF'
+Usage: agy-root [OPTIONS] [-c "<command>" | <command> [args...]]
+
+Options:
+  status, check, --status [--json]  Show live root (uid=0) & manager status
+  -mm, --mount-master               Run in global mount namespace (su -mm)
+  --fallback-rish                   Fall back to Shizuku (rish) if root is unavailable
+  -c <command>                      Execute shell command string as root
+  -h, --help                        Show this help message
+
+With no command arguments, launches an interactive root shell with AGY tools on PATH.
+EOF
+}
+
+build_env_prefix() {
+  _runtime_bin="$HOME/runtime/bin"
+  _cert="$PREFIX/etc/tls/cert.pem"
+  _openssl="$PREFIX/etc/tls/openssl.cnf"
+  _terminfo="$PREFIX/share/terminfo"
+  _path="$_runtime_bin:$PREFIX/bin:$CLEAN_SYS_PATH"
+  printf 'unset LD_PRELOAD LD_LIBRARY_PATH; export HOME=%s PREFIX=%s TMPDIR=%s PATH=%s SSL_CERT_FILE=%s CURL_CA_BUNDLE=%s GIT_SSL_CAINFO=%s OPENSSL_CONF=%s GIT_CONFIG_NOSYSTEM=1 GIT_ATTR_NOSYSTEM=1 TERM=xterm-256color TERMINFO=%s AGY_APPLICATION_ID=%s; ' \
+    "$(sh_quote "$HOME")" \
+    "$(sh_quote "$PREFIX")" \
+    "$(sh_quote "$TMPDIR")" \
+    "$(sh_quote "$_path")" \
+    "$(sh_quote "$_cert")" \
+    "$(sh_quote "$_cert")" \
+    "$(sh_quote "$_cert")" \
+    "$(sh_quote "$_openssl")" \
+    "$(sh_quote "$_terminfo")" \
+    "$(sh_quote "$AGY_APPLICATION_ID")"
+}
+
+MOUNT_MASTER=0
+FALLBACK_RISH=0
+CMD_MODE=0
+CMD_STR=""
+
+if [ $# -gt 0 ]; then
+  case "$1" in
+    status|check|--status)
+      shift
+      JSON_OUT=0
+      if [ "${1:-}" = "--json" ]; then
+        JSON_OUT=1
+      fi
+      show_status "$JSON_OUT"
+      exit $?
+      ;;
+    -h|--help)
+      show_help
+      exit 0
+      ;;
+  esac
+fi
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -mm|--mount-master)
+      MOUNT_MASTER=1
+      shift
+      ;;
+    --fallback-rish)
+      FALLBACK_RISH=1
+      shift
+      ;;
+    -c)
+      shift
+      if [ $# -eq 0 ]; then
+        echo "agy-root: -c requires a command string" >&2
+        exit 2
+      fi
+      CMD_MODE=1
+      CMD_STR="$1"
+      shift
+      break
+      ;;
+    --)
+      shift
+      break
+      ;;
+    -h|--help)
+      show_help
+      exit 0
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+
+SU_BIN="$(find_working_su || true)"
+if [ -z "$SU_BIN" ]; then
+  if [ "$FALLBACK_RISH" = "1" ] && [ -x "$PREFIX/bin/rish" ]; then
+    echo "agy-root: root not granted; falling back to Shizuku (rish)..." >&2
+    if [ "$CMD_MODE" = "1" ]; then
+      exec "$PREFIX/bin/rish" -c "$CMD_STR"
+    elif [ $# -gt 0 ]; then
+      _joined=""
+      for _arg in "$@"; do
+        _joined="${_joined} $(sh_quote "$_arg")"
+      done
+      exec "$PREFIX/bin/rish" -c "${_joined# }"
+    else
+      exec "$PREFIX/bin/rish"
+    fi
+  fi
+  print_root_guidance
+  exit 126
+fi
+
+SU_MM_ARG=""
+if [ "$MOUNT_MASTER" = "1" ]; then
+  if check_mount_master "$SU_BIN"; then
+    SU_MM_ARG="-mm"
+  else
+    echo "agy-root: warning: $SU_BIN does not support -mm; continuing with standard su" >&2
+  fi
+fi
+
+ENV_PREFIX="$(build_env_prefix)"
+
+if [ "$CMD_MODE" = "1" ]; then
+  PAYLOAD="${ENV_PREFIX}${CMD_STR}"
+elif [ $# -gt 0 ]; then
+  _joined=""
+  for _arg in "$@"; do
+    _joined="${_joined} $(sh_quote "$_arg")"
+  done
+  PAYLOAD="${ENV_PREFIX}${_joined# }"
+else
+  if [ -x "$HOME/runtime/bin/bash" ]; then
+    PAYLOAD="${ENV_PREFIX}exec $(sh_quote "$HOME/runtime/bin/bash") -i"
+  elif [ -x "$PREFIX/bin/bash" ]; then
+    PAYLOAD="${ENV_PREFIX}LD_LIBRARY_PATH=$(sh_quote "$PREFIX/lib") exec $(sh_quote "$PREFIX/bin/bash") -i"
+  else
+    PAYLOAD="${ENV_PREFIX}exec /system/bin/sh"
+  fi
+fi
+
+if [ -n "$SU_MM_ARG" ]; then
+  exec env -u LD_PRELOAD -u LD_LIBRARY_PATH PATH="$CLEAN_SYS_PATH" "$SU_BIN" "$SU_MM_ARG" -c "$PAYLOAD"
+else
+  exec env -u LD_PRELOAD -u LD_LIBRARY_PATH PATH="$CLEAN_SYS_PATH" "$SU_BIN" -c "$PAYLOAD"
+fi

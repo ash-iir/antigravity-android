@@ -1,0 +1,79 @@
+#!/system/bin/sh
+# sudo -- Familiar sudo-compatible frontend delegating to agy-root.
+
+unset LD_PRELOAD LD_LIBRARY_PATH
+set -u
+
+BASEDIR="$(CDPATH= cd -- "$(dirname -- "$0")" 2>/dev/null && pwd)"
+AGY_ROOT="$BASEDIR/agy-root"
+if [ ! -x "$AGY_ROOT" ] && [ -n "${PREFIX:-}" ] && [ -x "$PREFIX/bin/agy-root" ]; then
+  AGY_ROOT="$PREFIX/bin/agy-root"
+fi
+
+if [ ! -x "$AGY_ROOT" ]; then
+  echo "sudo: agy-root helper not found next to $0" >&2
+  exit 127
+fi
+
+EXTRA_ARGS=""
+INTERACTIVE=0
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -E|--preserve-env)
+      # agy-root always preserves AGY HOME/PREFIX/PATH/TLS environment.
+      shift
+      ;;
+    -i|-s|--login|--shell)
+      INTERACTIVE=1
+      shift
+      ;;
+    -mm|--mount-master)
+      EXTRA_ARGS="$EXTRA_ARGS --mount-master"
+      shift
+      ;;
+    --fallback-rish)
+      EXTRA_ARGS="$EXTRA_ARGS --fallback-rish"
+      shift
+      ;;
+    -v|--validate|--status)
+      exec "$AGY_ROOT" status
+      ;;
+    -h|--help)
+      cat <<'EOF'
+Usage: sudo [OPTIONS] [COMMAND [ARGS...]]
+
+Antigravity root wrapper (powered by agy-root):
+  -i, -s              Start an interactive root shell
+  -E                  Preserve environment (enabled by default)
+  -mm, --mount-master Run in global mount namespace (su -mm)
+  --fallback-rish     Fall back to Shizuku (rish) if root is unavailable
+  -v, --status        Check root availability and manager guidance
+  -c <command>        Run a shell command string as root
+EOF
+      exit 0
+      ;;
+    -c)
+      # shellcheck disable=SC2086
+      exec "$AGY_ROOT" $EXTRA_ARGS "$@"
+      ;;
+    --)
+      shift
+      break
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+
+if [ $# -eq 0 ] && [ "$INTERACTIVE" = "1" ]; then
+  # shellcheck disable=SC2086
+  exec "$AGY_ROOT" $EXTRA_ARGS
+elif [ $# -eq 0 ]; then
+  # shellcheck disable=SC2086
+  exec "$AGY_ROOT" $EXTRA_ARGS
+else
+  # shellcheck disable=SC2086
+  exec "$AGY_ROOT" $EXTRA_ARGS "$@"
+fi
