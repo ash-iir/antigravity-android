@@ -13,7 +13,9 @@ graph TD
     subgraph UI_Layer ["Слой представления (UI Layer)"]
         LDA["LauncherDarkActivity / LauncherLightActivity"] --> MA["MainActivity"]
         MA --> SC["SplashController (NativeSplashDotsView / Lazy WebView)"]
-        MA --> WVH["WebViewHost (Chromium WebView)"]
+        MA --> QCS["QuickControlSheet (AGY Pill & Diagnostics Sheet)"]
+        MA --> UC["UpdateChecker (GitHub Releases 24h Check)"]
+        MA --> WVH["WebViewHost (AgyWebView / ClipboardImageReader)"]
         WVH --> AWVC["AgyWebViewClient (OAuth & Asset Interceptor)"]
         WVH --> AWCC["AgyWebChromeClient (Console, Files, Popups)"]
         WVH --> LAS["LocalAssetServer (Внутрипроцессная раздача files/web/)"]
@@ -53,6 +55,7 @@ graph TD
         AFP["AppFileProvider (${applicationId}.fileprovider)"]
         DCH["DocumentsContractHelper (Преобразование SAF в /storage/...)"]
         SHB["ShizukuBridge / RishExecutor (ADB Shell uid=2000)"]
+        RB["RootBridge / RootResilience (uid=0, Doze/OOM)"]
         LIS["LauncherIconSwitcher (Динамическая смена иконки)"]
     end
 
@@ -124,7 +127,8 @@ graph TD
 | `system_info` | `DeviceHandler` | Сбор телеметрии: уровень заряда батареи, статус зарядки, тип сети, свободная память и диск. |
 | `vibrate` | `DeviceHandler` | Тактильный отклик (Haptic Feedback) заданной длительности. |
 | `toast` | `DeviceHandler` | Отображение нативных всплывающих сообщений (Toast). |
-| `exec` | `ExecHandler` | Выполнение команд в шелле (`/system/bin/sh` или повышенный `rish` через Shizuku) с таймаутом и захватом потоков. |
+| `exec` | `ExecHandler` | Выполнение команд в шелле (`/system/bin/sh` или повышенный `rish` через Shizuku) с таймаутом, захватом потоков и переменными Git/TLS (`GIT_SSL_CAINFO`). (Нативный root доступен через shell-утилиты `agy-root`/`su`/`sudo`, но не открыт по неаутентифицированному HTTP). |
+| `root_status` | `GatewayDispatcher` / `RootBridge` | Проверка статуса нативного root (`su`, KernelSU/bakaSU/Magisk/APatch), поддержка `-mm` и состояние Shizuku. |
 | `/gateway/status` | `SystemGatewayServer` | Проверка состояния шлюза (health check). |
 | `/gateway/logs` | `SystemGatewayServer` | Чтение последних строк системного лога из кольцевого буфера памяти. |
 | `/gateway/commands` | `SystemGatewayServer` | История выполненных шлюзом команд и их статусов. |
@@ -134,8 +138,8 @@ graph TD
 
 Класс `AndroidBridge` предоставляет минимальный, жестко изолированный интерфейс для фронтенда (`@JavascriptInterface`).
 
-- **Защита от сторонних фреймов:** Опасные операции (`onUiReady`, `onUiError`, `saveBlob`) требуют передачи криптографического токена `blobBridgeToken`, известного только доверенному верхнеуровневому документу. Сравнение токенов производится через `MessageDigest.isEqual` во избежание timing-атак.
-- **Изоляция:** Из интерфейса `AndroidBridge` исключен доступ к выполнению шелла, отправке произвольных нотификаций и прямому доступу к Shizuku. Все привилегированные операции вынесены в локальный шлюз `SystemGatewayServer`.
+- **Защита от сторонних фреймов:** Опасные операции (`onUiReady`, `onUiError`, `saveBlob`, `notifyAgentEvent`, `hasClipboardImage`, `requestClipboardImagePaste`, `readClipboardImage`) требуют передачи криптографического токена `blobBridgeToken`, известного только доверенному верхнеуровневому документу. Сравнение токенов производится через `MessageDigest.isEqual` во избежание timing-атак.
+- **Изоляция:** Из интерфейса `AndroidBridge` исключен доступ к выполнению шелла и произвольных системных команд. Нативный root (`RootBridge`, `RootResilience`) изолирован в Java-слое и shell-утилитах (`agy-root`, `su`, `sudo`, `agy-sys`).
 
 ### 2.5. Динамические иконки и темы (`com.agy.theme`)
 
@@ -154,8 +158,7 @@ graph TD
 ### 3.1. Утечки памяти (Memory Leaks)
 1. **Утечка `MainActivity` через `UiBridge` (ИСПРАВЛЕНО):** В `MainActivity.onDestroy()` добавлен вызов `androidBridge.setActivity(null)`. В `UiBridge` и `AndroidBridge` ссылки на `MainActivity` заменены на `WeakReference<MainActivity>`, что предотвращает утечку активити при смене ориентации и пересоздании.
 2. **Утечка WebView в `PopupWindowHandler` (ИСПРАВЛЕНО):** При срабатывании `window.open` после передачи URL во внешний браузер через `oauth.openInBrowser()` вызывается `popup.destroy()`, освобождая нативные ресурсы WebView всплывающего окна.
-3. **Статическая ссылка на Base64 в `FileDownloader`:** Поле `private static DownloadTask pendingTask` удерживает до 64 МБ Base64 данных при ожидании диалога разрешений. Если пользователь нажимает "Отмена", память не освобождается.
-   - *Рекомендация:* Сохранять временный файл на диск вместо удержания строки в памяти, либо сбрасывать задачу по таймауту.
+3. **Статическая ссылка на Base64 в `FileDownloader` (ИСПРАВЛЕНО):** Ожидающие разрешения blob-загрузки сбрасываются во временный файл в `cacheDir` и очищаются при отказе, завершении, в `MainActivity.onDestroy()` (`clearPendingTask()`) и на старте (`pruneStalePendingBlobsAsync()`), устраняя утечку до 64 МБ в статической памяти.
 4. **Накопление объектов `WakeLock` в `PowerHandler` (ИСПРАВЛЕНО):** Реализована автоматическая очистка неактивных или отпущенных блокировок (`!lock.isHeld()`) через метод `cleanupUnheld()`, а также удаление блокировок из `ConcurrentHashMap` при проверке `status` и после `acquire`, что устраняет утечку памяти при истечении таймаута (`timeout_ms`).
 5. **Защита от OOM в `SystemGatewayServer` (ИСПРАВЛЕНО):** В методе `readHeaderLine` добавлен лимит максимальной длины строки заголовка (8192 байта), предотвращающий DoS/OOM при отправке бесконечных заголовков.
 

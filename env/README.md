@@ -28,8 +28,12 @@ env/
 │   │   ├── agy-daemon      # Фоновый автономный диспетчер задач и планировщик
 │   │   ├── agy-fix-paths   # Утилита динамической нормализации шебангов и путей
 │   │   ├── agy-notify      # Утилита управления системными уведомлениями Android
+│   │   ├── agy-root        # Обертка root (uid=0) с поддержкой KernelSU/bakaSU/Magisk/APatch и -mm
+│   │   ├── agy-sys         # Root-утилита диагностики, Doze/OOM-защиты, модулей KSU/Magisk, pm и logcat
 │   │   ├── agy-upgrade     # Менеджер безопасного обновления, бэкапа и миграций
 │   │   ├── rish            # Клиент Shizuku для привилегированного шелла (uid=2000)
+│   │   ├── su              # KernelSU/bakaSU/Magisk/APatch-совместимая обертка su
+│   │   ├── sudo            # Совместимый с sudo фронтенд поверх agy-root
 │   │   └── cs              # Заглушка для language server
 │   ├── etc/                # Системная конфигурация
 │   │   ├── antigravity/    # AGENTS.md (глобальные правила агента)

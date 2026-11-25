@@ -81,6 +81,8 @@ web/
 │       ├── web_optimizations.js
 │       ├── touch_model_menu.js
 │       ├── theme_sync.js
+│       ├── agent_notify.js
+│       ├── clipboard_image_paste.js
 │       └── startup_ready.js
 ├── src/                          # Модульные исходники фрагментов бандлов
 │   ├── boot/                     # Фрагменты раннего старта
@@ -112,6 +114,8 @@ web/
 | **`patches/web_optimizations.js`** | IIFE | ~2.2 KB | Ликвидация 300мс задержки тапа, фиксация высоты `--agy-vvh` при открытии IME, GPU-композитинг. |
 | **`patches/touch_model_menu.js`** | IIFE | ~6.7 KB | Адаптация hover-меню выбора моделей Base UI под сенсорный ввод. |
 | **`patches/theme_sync.js`** | IIFE | ~4.7 KB | MutationObserver за классами `<html>`/`<body>` и передача смены темы в нативный Android. |
+| **`patches/agent_notify.js`** | IIFE | ~3.2 KB | Мост аудио-сигналов и Web Notification API к нативным кликабельным уведомлениям Android при работе в фоне. |
+| **`patches/clipboard_image_paste.js`** | IIFE | ~5.8 KB | Вставка изображений из буфера обмена и клавиатур (`commitContent`) в композитор чата. |
 | **`patches/startup_ready.js`** | IIFE | ~4.7 KB | Детектор первого полезного рендера DOM и перехватчик JS-ошибок для `AndroidBridge`. |
 | **`main.js`** | Raw + Patch | ~9.5 MB | Рабочий бандл React UI, пропатченный скриптом `patch_main.py`. |
 
@@ -166,6 +170,10 @@ web/
 | `setDesktopMode`| `(enabled: boolean) => void` | Динамически переключает User-Agent и Viewport WebView между мобильным и десктопным режимами. |
 | `openDirectoryPicker` | `() => void` | Запускает системный диалог выбора папки (SAF Document Tree) для открытия проекта. |
 | `saveBlob` | `(token, base64, filename, mime) => void` | Безопасное сохранение сгенерированных веб-интерфейсом блобов в хранилище `Downloads`. |
+| `notifyAgentEvent` | `(token, type, title, body) => void` | Отправка кликабельного фонового уведомления при завершении или запросе подтверждения агента. |
+| `hasClipboardImage` | `(token) => boolean` | Быстрая проверка наличия изображения в `ClipDescription` без вызова toast-уведомления Android 12+. |
+| `requestClipboardImagePaste` | `(token) => void` | Асинхронное чтение/масштабирование изображения из буфера и передача в `window.__agPasteImage`. |
+| `readClipboardImage` | `(token) => string` | Синхронный fallback чтения изображения из буфера обмена в JSON. |
 
 ---
 
@@ -194,7 +202,7 @@ web/
   - Создает стаб `window.process` (Linux / ARM64 / renderer) со стандартными методами `cwd()` и `nextTick()`.
   - Переопределяет `window.fetch`. Все запросы к ConnectRPC-маркерам (`exa.language_server_pb.`, `exa.host_bridge_pb.`, `/exa.`) переписываются на целевой origin ядра `https://127.0.0.1:<enginePort>`.
   - Автоматически инжектирует CSRF-заголовок `x-codeium-csrf-token` и параметр `csrf_token`.
-  - Содержит логику ретрая `fetchWithStartupRetry` (до 30 попыток с шагом 120мс), что предотвращает сбои первого запроса, если фронтенд стартовал раньше, чем TLS-сокет ядра завершил биндинг.
+  - Содержит логику ретрая `fetchWithStartupRetry` (до 30 попыток со ступенчатым backoff `120..800 мс` и немедленным пропуском при `AbortSignal`/`AbortError`), что предотвращает сбои первого запроса на старте, а также восстановление потоков при событии `agy:network-online` (с debounce 3 с).
 
 ### 6.4. Воркеры и аудиопроцессинг
 - **PDF Pipeline (`workers/`)**: изолированная работа с документами в воркере `pdf.worker.mjs` без блокировки главного потока UI.

@@ -70,16 +70,18 @@ No PRoot, chroot, or virtualization overhead. Antigravity runs **bare-metal insi
 ### Key Features
 
 * **Autonomous Agent:** Plans tasks, edits code across project trees, executes shell tools, and fixes build errors.
-* **Elevated Control (Shizuku):** Direct ADB-level operations (`uid=2000`) without root for package installs and system diagnostics.
+* **Elevated Control (Root & Shizuku):** Optional native `uid=0` support (`agy-root`, `su`, `sudo`, `agy-sys`) for KernelSU/bakaSU/Magisk/APatch with Doze/OOM anti-kill resilience, alongside non-root Shizuku (`uid=2000`) via `rish`.
+* **Chat Image Paste & Background Alerts:** Paste screenshots directly from Android clipboard or keyboard (`commitContent`), plus clickable background agent completion notifications.
+* **Quick-Control Sheet & Update Checker:** Tuckable floating `AGY` pill for Root/Shizuku status, Anti-Kill, Desktop Mode, Core Restart, Log Export, and passive GitHub Release checks.
 * **Built-in `pkg` Manager:** Fast package manager installing development runtimes (`git`, `python`, `node`, `clang`) from Termux repos.
 * **Adaptive Viewports:** Seamless touch-first mobile UI with optional desktop layout.
-* **In-Place Upgrades:** Consistent keystore guarantees updating APKs without losing sessions or workspace data.
+* **In-Place Upgrades:** Consistent keystore guarantees updating APKs without losing sessions or workspace data, paired with `agy-upgrade` CLI backup/restore.
 
 ---
 
 ### Quick Start
 
-1. **Download APK** from [Releases](https://github.com/werdio325-png/antigravity-android/releases):
+1. **Download APK** from [Releases](https://github.com/salmanbappi/antigravity-android/releases):
    * `antigravity.apk` — standard release (original Google account checks).
    * `antigravity-region-bypass.apk` — release with account eligibility check bypass.
 2. **Grant Storage Permission** (`All Files Access`). *(Optional: enable Shizuku for ADB access)*.
