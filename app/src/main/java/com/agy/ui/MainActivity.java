@@ -59,6 +59,11 @@ public class MainActivity extends Activity
     private static final long NETWORK_NOTIFY_DEBOUNCE_MS = 800;
 
     public static volatile MainActivity activeActivity;
+    private static volatile boolean sInForeground = false;
+
+    public static boolean isInForeground() {
+        return sInForeground;
+    }
 
     private ValueCallback<Uri[]> filePathCallback;
     private android.webkit.PermissionRequest pendingPermissionRequest;
@@ -257,6 +262,10 @@ public class MainActivity extends Activity
         }
     }
 
+    public WebView getWebView() {
+        return webViewHost != null ? webViewHost.getWebView() : null;
+    }
+
     /** Called from NetworkMonitorHolder when connectivity recovers from offline. */
     public void notifyNetworkRecovered() {
         handler.removeCallbacks(notifyWebViewNetworkOnline);
@@ -266,6 +275,7 @@ public class MainActivity extends Activity
     @Override
     protected void onDestroy() {
         activityResumed = false;
+        sInForeground = false;
         if (activeActivity == this) {
             activeActivity = null;
         }
@@ -322,6 +332,7 @@ public class MainActivity extends Activity
     @Override
     protected void onPause() {
         activityResumed = false;
+        sInForeground = false;
         handler.removeCallbacks(pollServer);
         if (webViewHost != null) {
             AppLifecycle.pause(webViewHost.getWebView());
@@ -331,6 +342,7 @@ public class MainActivity extends Activity
 
     @Override
     protected void onStop() {
+        sInForeground = false;
         super.onStop();
     }
 
@@ -338,6 +350,7 @@ public class MainActivity extends Activity
     protected void onResume() {
         super.onResume();
         activityResumed = true;
+        sInForeground = true;
         activeActivity = this;
         if (webViewHost != null) {
             AppLifecycle.resume(webViewHost.getWebView());

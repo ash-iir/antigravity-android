@@ -20,6 +20,7 @@ import java.security.SecureRandom;
  */
 public final class AndroidBridge {
 
+    private final Context appContext;
     private final UiBridge ui = new UiBridge();
     private final ThemeBridge themeBridge;
     private final EngineBridge engine;
@@ -29,10 +30,10 @@ public final class AndroidBridge {
 
     public AndroidBridge(Context context, RuntimeManager runtime,
                          ShizukuBridge shizuku, ThemeManager theme) {
-        Context appContext = context.getApplicationContext();
+        this.appContext = context.getApplicationContext();
         this.themeBridge = new ThemeBridge(theme);
         this.engine = new EngineBridge(runtime);
-        this.config = new EngineConfigJson(appContext, runtime, engine, shizuku, themeBridge);
+        this.config = new EngineConfigJson(this.appContext, runtime, engine, shizuku, themeBridge);
     }
 
     /** Host activity, used to dismiss the native splash once the UI has painted. */
@@ -122,6 +123,72 @@ public final class AndroidBridge {
     /** Native-only token inserted into the trusted top-level document. */
     public String getBlobBridgeToken() {
         return blobBridgeToken;
+    }
+
+    /**
+     * Posts a native Android notification when the agent completes a task or requires
+     * action while the host activity is backgrounded. Guarded by the top-level document token.
+     */
+    @JavascriptInterface
+    public void notifyAgentEvent(String token, String eventType, String title, String body) {
+        if (!matchesNativeBridgeToken(token)) {
+            return;
+        }
+        if (MainActivity.isInForeground()) {
+            return;
+        }
+        String tag = (eventType != null && !eventType.trim().isEmpty())
+                ? ("agy_agent_" + eventType.trim()) : "agy_agent_done";
+        com.agy.gateway.handlers.NotificationHandler.postAgentAlert(appContext, tag, title, body);
+    }
+
+    /**
+     * Checks clipboard image MIME metadata without reading clip content, avoiding
+     * Android 12+ clipboard toast notifications unless an image is actually present.
+     */
+    @JavascriptInterface
+    public boolean hasClipboardImage(String token) {
+        if (!matchesNativeBridgeToken(token)) {
+            return false;
+        }
+        return com.agy.ui.webview.ClipboardImageReader.hasClipboardImage(appContext);
+    }
+
+    /**
+     * Reads, downscales, and delivers a clipboard image asynchronously on a background
+     * thread to avoid blocking the WebView JS thread.
+     */
+    @JavascriptInterface
+    public void requestClipboardImagePaste(String token) {
+        if (!matchesNativeBridgeToken(token)) {
+            return;
+        }
+        final MainActivity act = activityRef != null ? activityRef.get() : MainActivity.activeActivity;
+        final android.webkit.WebView wv = act != null ? act.getWebView() : null;
+        if (wv == null) {
+            return;
+        }
+        Thread t = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                com.agy.ui.webview.ClipboardImageReader.ImageData img =
+                        com.agy.ui.webview.ClipboardImageReader.readFromClipboard(appContext);
+                com.agy.ui.webview.AgyWebView.dispatchImageToWebView(wv, img);
+            }
+        }, "AgyClipImagePaste");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    /** Reads an image URI from Android's clipboard for scripts holding the top-level token. */
+    @JavascriptInterface
+    public String readClipboardImage(String token) {
+        if (!matchesNativeBridgeToken(token)) {
+            return "";
+        }
+        com.agy.ui.webview.ClipboardImageReader.ImageData img =
+                com.agy.ui.webview.ClipboardImageReader.readFromClipboard(appContext);
+        return img != null ? img.toJson().toString() : "";
     }
 
     /** Saves a downloaded blob only for scripts holding the top-level document token. */
