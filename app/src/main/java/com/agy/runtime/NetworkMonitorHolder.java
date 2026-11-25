@@ -14,15 +14,26 @@ public final class NetworkMonitorHolder {
         this.appContext = context.getApplicationContext();
     }
 
-    /** Registers the default-network callback once; refreshes DNS on changes. */
+    /** Registers the default-network callback once; refreshes DNS on changes and wakes streams on offline->online recovery. */
     public synchronized void start() {
         if (monitor == null) {
-            monitor = new NetworkMonitor(appContext, new NetworkMonitor.Listener() {
-                @Override
-                public void onNetworkChanged() {
-                    NetworkConfigWriter.write(appContext);
-                }
-            });
+            monitor = new NetworkMonitor(
+                    appContext,
+                    new NetworkMonitor.Listener() {
+                        @Override
+                        public void onNetworkChanged() {
+                            NetworkConfigWriter.write(appContext);
+                        }
+                    },
+                    new NetworkMonitor.RecoveryListener() {
+                        @Override
+                        public void onNetworkRecovered() {
+                            com.agy.ui.MainActivity act = com.agy.ui.MainActivity.activeActivity;
+                            if (act != null) {
+                                act.notifyNetworkRecovered();
+                            }
+                        }
+                    });
         }
         monitor.register();
     }

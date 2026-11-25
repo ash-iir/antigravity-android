@@ -262,16 +262,27 @@ function installFetchRewrite() {
   if (global.__AG_FETCH_REWRITE__ || typeof global.fetch !== 'function') return;
   var origFetch = global.fetch.bind(global);
 
-  function fetchWithStartupRetry(u, opts, retries) {
+  function isAbortedError(opts, err) {
+    if (opts && opts.signal && opts.signal.aborted) return true;
+    return !!(err && (err.name === 'AbortError' || err.code === 20));
+  }
+
+  function fetchWithStartupRetry(u, opts, retries, attempt) {
+    var step = attempt || 0;
     return origFetch(u, opts).catch(function (err) {
-      if (retries > 0) {
-        return new Promise(function (resolve) {
-          setTimeout(function () {
-            resolve(fetchWithStartupRetry(u, opts, retries - 1));
-          }, 120);
-        });
+      if (isAbortedError(opts, err) || retries <= 0) {
+        throw err;
       }
-      throw err;
+      var delayMs = Math.min(800, 120 + step * 80);
+      return new Promise(function (resolve, reject) {
+        setTimeout(function () {
+          if (opts && opts.signal && opts.signal.aborted) {
+            reject(err);
+            return;
+          }
+          resolve(fetchWithStartupRetry(u, opts, retries - 1, step + 1));
+        }, delayMs);
+      });
     });
   }
 
@@ -307,7 +318,12 @@ function installFetchRewrite() {
                 body: bodyData,
                 credentials: 'omit'
               };
-              return fetchWithStartupRetry(targetUrl, nextOpts, 30);
+              if (init && init.signal) {
+                nextOpts.signal = init.signal;
+              } else if (resource.signal) {
+                nextOpts.signal = resource.signal;
+              }
+              return fetchWithStartupRetry(targetUrl, nextOpts, 30, 0);
             });
           } catch (e) { warn('fetch rewrite (Request)', e); }
         }
@@ -329,7 +345,7 @@ function installFetchRewrite() {
           }
           next.headers = headers;
 
-          return fetchWithStartupRetry(url, next, 30);
+          return fetchWithStartupRetry(url, next, 30, 0);
         }
       }
     } catch (e) { warn('fetch rewrite', e); }
@@ -382,18 +398,38 @@ function installResumeHandler() {
   try {
     if (global.__AG_RESUME_HANDLER__) return;
     global.__AG_RESUME_HANDLER__ = true;
-    global.addEventListener('agy:host-resume', function () {
+    var lastRecoveryAt = 0;
+
+    function triggerStreamRecovery(reason) {
+      var now = Date.now();
+      if (now - lastRecoveryAt < 3000) return;
+      lastRecoveryAt = now;
       try {
         global.dispatchEvent(new Event('focus'));
-        global.dispatchEvent(new Event('online'));
+        if (reason !== 'browser-online') {
+          global.dispatchEvent(new Event('online'));
+        }
         if (typeof document !== 'undefined') {
           document.dispatchEvent(new Event('visibilitychange'));
         }
+        if (typeof CustomEvent === 'function') {
+          global.dispatchEvent(new CustomEvent('agy:stream-recover', { detail: { reason: reason } }));
+        }
       } catch (err) {
         if (typeof console !== 'undefined' && console.warn) {
-          console.warn('[AGY] host-resume dispatch error', err);
+          console.warn('[AGY] stream recovery dispatch error', err);
         }
       }
+    }
+
+    global.addEventListener('agy:host-resume', function () {
+      triggerStreamRecovery('host-resume');
+    });
+    global.addEventListener('agy:network-online', function () {
+      triggerStreamRecovery('network-online');
+    });
+    global.addEventListener('online', function () {
+      triggerStreamRecovery('browser-online');
     });
   } catch (e) {
     if (typeof console !== 'undefined' && console.warn) {

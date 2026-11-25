@@ -28,14 +28,24 @@ public final class CoreEnvironment {
                 + " appDataDir=" + rm.getAppDataDir().getAbsolutePath()
                 + " projectsDir=" + rm.getProjectsDir().getAbsolutePath()
                 + " TMPDIR=" + rm.appContext().getCacheDir().getAbsolutePath());
-        env.put("SSL_CERT_FILE", rm.getCertFile().getAbsolutePath());
+        File prefix = new File(files, com.agy.install.EnvPaths.PREFIX_DIR);
+        File prefixCert = new File(prefix, "etc/tls/cert.pem");
+        File certFile = prefixCert.isFile() ? prefixCert : rm.getCertFile();
+        env.put("SSL_CERT_FILE", certFile.getAbsolutePath());
+        env.put("CURL_CA_BUNDLE", certFile.getAbsolutePath());
+        env.put("GIT_SSL_CAINFO", certFile.getAbsolutePath());
+        File opensslConf = new File(prefix, "etc/tls/openssl.cnf");
+        if (opensslConf.isFile()) {
+            env.put("OPENSSL_CONF", opensslConf.getAbsolutePath());
+        }
+        env.put("GIT_CONFIG_NOSYSTEM", "1");
+        env.put("GIT_ATTR_NOSYSTEM", "1");
         String inheritedPath = env.get("PATH");
 
         // The core's PTY spawner uses $SHELL (or falls back to /bin/bash, which
         // does not exist on Android). Prefer the bridge wrapper in runtime/bin
         // which configures LD_LIBRARY_PATH, PATH, and unsets LD_PRELOAD before
         // execing the bionic bash binary.
-        File prefix = new File(files, com.agy.install.EnvPaths.PREFIX_DIR);
         File prefixBash = new File(prefix, com.agy.install.EnvPaths.BASH_REL);
         File runtimeBash = new File(bin, "bash");
         env.put("PREFIX", prefix.getAbsolutePath());

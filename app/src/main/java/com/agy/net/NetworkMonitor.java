@@ -20,16 +20,30 @@ public final class NetworkMonitor {
         void onNetworkChanged();
     }
 
+    public interface RecoveryListener {
+        void onNetworkRecovered();
+    }
+
     private final Context appContext;
     private final Listener listener;
+    private final RecoveryListener recoveryListener;
+    private final Object stateLock = new Object();
 
     private ConnectivityManager connectivityManager;
     private ConnectivityManager.NetworkCallback callback;
     private boolean registered;
+    private boolean offline;
+    private boolean ignoreInitialAvailable;
+    private Network currentNetwork;
 
     public NetworkMonitor(Context context, Listener listener) {
+        this(context, listener, null);
+    }
+
+    public NetworkMonitor(Context context, Listener listener, RecoveryListener recoveryListener) {
         this.appContext = context.getApplicationContext();
         this.listener = listener;
+        this.recoveryListener = recoveryListener;
     }
 
     /** Idempotent. Safe to call from any thread; never throws. */
@@ -42,20 +56,52 @@ public final class NetworkMonitor {
             return;
         }
         try {
-            ConnectivityManager cm =
+            final ConnectivityManager cm =
                     (ConnectivityManager) appContext.getSystemService(Context.CONNECTIVITY_SERVICE);
             if (cm == null) {
                 Log.w(TAG, "ConnectivityManager unavailable; DNS refresh disabled");
                 return;
             }
+            final Network initialNet = cm.getActiveNetwork();
+            synchronized (stateLock) {
+                this.currentNetwork = initialNet;
+                this.offline = (initialNet == null);
+                this.ignoreInitialAvailable = (initialNet != null);
+            }
             ConnectivityManager.NetworkCallback cb = new ConnectivityManager.NetworkCallback() {
                 @Override
                 public void onAvailable(Network network) {
                     notifyChanged();
+                    boolean recovered = false;
+                    synchronized (stateLock) {
+                        if (ignoreInitialAvailable && !offline
+                                && (currentNetwork == null || currentNetwork.equals(network))) {
+                            ignoreInitialAvailable = false;
+                        } else if (offline) {
+                            offline = false;
+                            ignoreInitialAvailable = false;
+                            currentNetwork = network;
+                            recovered = true;
+                        } else {
+                            ignoreInitialAvailable = false;
+                            currentNetwork = network;
+                        }
+                    }
+                    if (recovered) {
+                        notifyRecovered();
+                    }
                 }
 
                 @Override
                 public void onLost(Network network) {
+                    synchronized (stateLock) {
+                        if (currentNetwork == null || currentNetwork.equals(network)
+                                || cm.getActiveNetwork() == null) {
+                            offline = true;
+                            ignoreInitialAvailable = false;
+                            currentNetwork = null;
+                        }
+                    }
                     notifyChanged();
                 }
 
@@ -91,14 +137,33 @@ public final class NetworkMonitor {
             registered = false;
             connectivityManager = null;
             callback = null;
+            synchronized (stateLock) {
+                currentNetwork = null;
+                offline = false;
+                ignoreInitialAvailable = false;
+            }
         }
     }
 
     private void notifyChanged() {
+        if (listener == null) {
+            return;
+        }
         try {
             listener.onNetworkChanged();
         } catch (Exception e) {
             Log.w(TAG, "network change listener failed", e);
+        }
+    }
+
+    private void notifyRecovered() {
+        if (recoveryListener == null) {
+            return;
+        }
+        try {
+            recoveryListener.onNetworkRecovered();
+        } catch (Exception e) {
+            Log.w(TAG, "network recovery listener failed", e);
         }
     }
 }

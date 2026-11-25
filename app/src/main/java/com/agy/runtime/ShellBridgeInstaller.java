@@ -35,7 +35,11 @@ public final class ShellBridgeInstaller {
     /** Records which prefix the bulk bridges were generated for. Bump when the
      *  bridge script format changes so a warm launch regenerates them once. */
     private static final String BRIDGE_MARKER = ".agy-bridges";
-    private static final int BRIDGE_FORMAT = 3;
+    private static final int BRIDGE_FORMAT = 5;
+
+    private static final String[] PRIVILEGE_SHIMS = {
+            "rish", "su", "sudo", "agy-root", "agy-sys"
+    };
 
     private ShellBridgeInstaller() {
     }
@@ -133,6 +137,14 @@ public final class ShellBridgeInstaller {
         String appId = rm.appContext().getPackageName();
         writeBridge(new File(bin, "bash"), prefix, "bash", appId);
         writeBridge(new File(bin, "sh"), prefix, "bash", appId);
+        // Remove stale privilege-tool bridges so PATH resolves directly to $PREFIX/bin
+        // without injecting Bionic LD_LIBRARY_PATH before `su`.
+        for (String priv : new String[]{"su", "sudo", "agy-root", "agy-sys"}) {
+            File stale = new File(bin, priv);
+            if (stale.isFile()) {
+                stale.delete();
+            }
+        }
         File[] prefixTools = new File(prefix, "bin").listFiles();
         int toolCount = countFiles(prefixTools);
         File marker = new File(bin, BRIDGE_MARKER);
@@ -143,7 +155,7 @@ public final class ShellBridgeInstaller {
             for (File toolFile : prefixTools) {
                 if (toolFile.isFile()) {
                     String name = toolFile.getName();
-                    if ("rish".equals(name) || isOpenUrlShim(name)) {
+                    if (isPrivilegeShim(name) || isOpenUrlShim(name)) {
                         continue;
                     }
                     writeBridge(new File(bin, name), prefix, name, appId);
@@ -201,6 +213,15 @@ public final class ShellBridgeInstaller {
         return false;
     }
 
+    private static boolean isPrivilegeShim(String name) {
+        for (String priv : PRIVILEGE_SHIMS) {
+            if (priv.equals(name)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /**
      * Writes the AGY URL opener shim. It prints markers for the core stdout
      * reader and sends one signature-protected internal broadcast as a shell-side fallback.
@@ -242,11 +263,13 @@ public final class ShellBridgeInstaller {
         sb.append("unset LD_PRELOAD\n");
         sb.append("export LD_LIBRARY_PATH=\"$PREFIX/lib\"\n");
         sb.append("export PATH=\"$PREFIX/bin:/system/bin\"\n");
+        sb.append("export GODEBUG=\"netdns=cgo\"\n");
         sb.append("export TERM=\"xterm-256color\"\n");
         sb.append("export TERMINFO=\"$PREFIX/share/terminfo\"\n");
         sb.append("export OPENSSL_CONF=\"$PREFIX/etc/tls/openssl.cnf\"\n");
         sb.append("export SSL_CERT_FILE=\"$PREFIX/etc/tls/cert.pem\"\n");
         sb.append("export CURL_CA_BUNDLE=\"$PREFIX/etc/tls/cert.pem\"\n");
+        sb.append("export GIT_SSL_CAINFO=\"$PREFIX/etc/tls/cert.pem\"\n");
         sb.append("export GIT_CONFIG_NOSYSTEM=1\n");
         sb.append("export GIT_ATTR_NOSYSTEM=1\n");
         sb.append("export GIT_TEMPLATE_DIR=\"$PREFIX/share/git-core/templates\"\n");

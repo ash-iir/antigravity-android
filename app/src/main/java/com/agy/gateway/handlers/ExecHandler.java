@@ -93,6 +93,9 @@ public final class ExecHandler {
                 pb.environment().put("OPENSSL_CONF", prefix + "/etc/tls/openssl.cnf");
                 pb.environment().put("SSL_CERT_FILE", prefix + "/etc/tls/cert.pem");
                 pb.environment().put("CURL_CA_BUNDLE", prefix + "/etc/tls/cert.pem");
+                pb.environment().put("GIT_SSL_CAINFO", prefix + "/etc/tls/cert.pem");
+                pb.environment().put("GIT_CONFIG_NOSYSTEM", "1");
+                pb.environment().put("GIT_ATTR_NOSYSTEM", "1");
             }
 
             Process proc = pb.start();

@@ -56,6 +56,7 @@ public class MainActivity extends Activity
     private static final long SPLASH_TIMEOUT_MS = 60000;
     private static final long POLL_STARTUP_INTERVAL_MS = 50;
     private static final long POLL_READY_INTERVAL_MS = 1000;
+    private static final long NETWORK_NOTIFY_DEBOUNCE_MS = 800;
 
     public static volatile MainActivity activeActivity;
 
@@ -77,6 +78,29 @@ public class MainActivity extends Activity
     private long splashDeadline;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
+
+    private final Runnable notifyWebViewNetworkOnline = new Runnable() {
+        @Override
+        public void run() {
+            if (!appLoaded || webViewHost == null) {
+                return;
+            }
+            WebView wv = webViewHost.getWebView();
+            if (wv == null) {
+                return;
+            }
+            try {
+                wv.evaluateJavascript(
+                        "(function(){ try { "
+                                + "window.dispatchEvent(new CustomEvent('agy:network-online')); "
+                                + "window.dispatchEvent(new Event('online')); "
+                                + "} catch(e){} })();",
+                        null);
+            } catch (Exception e) {
+                Log.w(TAG, "failed to dispatch network-online to webView", e);
+            }
+        }
+    };
 
     /**
      * Runs for the whole activity life: it drives the splash, loads the app on
@@ -167,6 +191,7 @@ public class MainActivity extends Activity
         splash.installExitAnimation(this);
 
         splashDeadline = System.currentTimeMillis() + SPLASH_TIMEOUT_MS;
+        com.agy.ui.download.FileDownloader.pruneStalePendingBlobsAsync(this);
         requestAppPermissions();
 
         startCoreService();
@@ -232,12 +257,20 @@ public class MainActivity extends Activity
         }
     }
 
+    /** Called from NetworkMonitorHolder when connectivity recovers from offline. */
+    public void notifyNetworkRecovered() {
+        handler.removeCallbacks(notifyWebViewNetworkOnline);
+        handler.postDelayed(notifyWebViewNetworkOnline, NETWORK_NOTIFY_DEBOUNCE_MS);
+    }
+
     @Override
     protected void onDestroy() {
         activityResumed = false;
         if (activeActivity == this) {
             activeActivity = null;
         }
+        handler.removeCallbacks(notifyWebViewNetworkOnline);
+        com.agy.ui.download.FileDownloader.clearPendingTask();
         AppLifecycle.destroy(handler);
         if (androidBridge != null) {
             androidBridge.setActivity(null);

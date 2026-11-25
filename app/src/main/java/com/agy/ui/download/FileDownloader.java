@@ -40,6 +40,8 @@ public final class FileDownloader {
 
     private static final String TAG = "FileDownloader";
     private static final int MAX_BLOB_BYTES = 64 * 1024 * 1024;
+    private static final String PENDING_BLOB_PREFIX = "agy_pending_blob_";
+    private static final String PENDING_BLOB_SUFFIX = ".tmp";
     public static final int REQUEST_STORAGE_DOWNLOAD = 2001;
 
     public static class DownloadTask {
@@ -48,22 +50,78 @@ public final class FileDownloader {
         public final String contentDisposition;
         public final String mimeType;
         public final long contentLength;
-        public final String base64Data; // set if blob download
+        public final File pendingBlobFile; // spilled temp file if blob download waits for permission
 
         public DownloadTask(String url, String userAgent, String contentDisposition,
-                            String mimeType, long contentLength, String base64Data) {
+                            String mimeType, long contentLength, File pendingBlobFile) {
             this.url = url;
             this.userAgent = userAgent;
             this.contentDisposition = contentDisposition;
             this.mimeType = mimeType;
             this.contentLength = contentLength;
-            this.base64Data = base64Data;
+            this.pendingBlobFile = pendingBlobFile;
         }
     }
 
     private static DownloadTask pendingTask;
 
     private FileDownloader() {
+    }
+
+    /** Releases any pending download task and deletes spilled temp blob files. */
+    public static synchronized void clearPendingTask() {
+        if (pendingTask != null) {
+            if (pendingTask.pendingBlobFile != null) {
+                try {
+                    pendingTask.pendingBlobFile.delete();
+                } catch (Throwable ignored) {
+                }
+            }
+            pendingTask = null;
+        }
+    }
+
+    /** Sweeps orphaned pending blob temp files from cacheDir (e.g. after process kill). */
+    public static void pruneStalePendingBlobsAsync(final Context context) {
+        if (context == null) {
+            return;
+        }
+        final Context appCtx = context.getApplicationContext();
+        Thread t = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    File cacheDir = appCtx.getCacheDir();
+                    if (cacheDir == null || !cacheDir.isDirectory()) {
+                        return;
+                    }
+                    File activeBlob;
+                    synchronized (FileDownloader.class) {
+                        activeBlob = pendingTask != null ? pendingTask.pendingBlobFile : null;
+                    }
+                    String activeName = activeBlob != null ? activeBlob.getName() : null;
+                    File[] files = cacheDir.listFiles();
+                    if (files == null) {
+                        return;
+                    }
+                    for (File f : files) {
+                        if (f != null && f.isFile()) {
+                            String name = f.getName();
+                            if (name.startsWith(PENDING_BLOB_PREFIX)
+                                    && name.endsWith(PENDING_BLOB_SUFFIX)
+                                    && !name.equals(activeName)) {
+                                if (!f.delete()) {
+                                    Log.d(TAG, "could not delete stale blob temp: " + name);
+                                }
+                            }
+                        }
+                    }
+                } catch (Throwable ignored) {
+                }
+            }
+        }, "BlobCacheCleanup");
+        t.setDaemon(true);
+        t.start();
     }
 
     public static boolean hasStoragePermission(Context context) {
@@ -74,16 +132,19 @@ public final class FileDownloader {
         return true;
     }
 
-    public static void requestStoragePermission(Activity activity, DownloadTask task) {
+    public static synchronized void requestStoragePermission(Activity activity, DownloadTask task) {
+        clearPendingTask();
         pendingTask = task;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            Toast.makeText(activity, "Требуется доступ к файлам для скачивания", Toast.LENGTH_SHORT).show();
+            Toast.makeText(activity, "Storage permission is required to download files", Toast.LENGTH_SHORT).show();
             activity.requestPermissions(new String[]{
                     Manifest.permission.WRITE_EXTERNAL_STORAGE,
                     Manifest.permission.READ_EXTERNAL_STORAGE
             }, REQUEST_STORAGE_DOWNLOAD);
         } else {
-            executeTask(activity, null, task);
+            DownloadTask runNow = pendingTask;
+            pendingTask = null;
+            executeTask(activity, null, runNow);
         }
     }
 
@@ -93,15 +154,23 @@ public final class FileDownloader {
         }
         boolean granted = grantResults != null && grantResults.length > 0
                 && grantResults[0] == PackageManager.PERMISSION_GRANTED;
+        DownloadTask task;
+        synchronized (FileDownloader.class) {
+            task = pendingTask;
+            pendingTask = null;
+        }
         if (granted) {
-            if (pendingTask != null) {
-                DownloadTask task = pendingTask;
-                pendingTask = null;
+            if (task != null) {
                 executeTask(activity, webView, task);
             }
         } else {
-            pendingTask = null;
-            Toast.makeText(activity, "Разрешение на доступ к файлам отклонено", Toast.LENGTH_LONG).show();
+            if (task != null && task.pendingBlobFile != null) {
+                try {
+                    task.pendingBlobFile.delete();
+                } catch (Throwable ignored) {
+                }
+            }
+            Toast.makeText(activity, "Storage permission denied", Toast.LENGTH_LONG).show();
         }
     }
 
@@ -117,12 +186,95 @@ public final class FileDownloader {
     }
 
     public static void handleBlobData(Activity activity, String base64Data, String filename, String mimeType) {
-        DownloadTask task = new DownloadTask(null, null, filename, mimeType, 0, base64Data);
-        if (!hasStoragePermission(activity)) {
-            requestStoragePermission(activity, task);
-        } else {
-            executeTask(activity, null, task);
+        if (hasStoragePermission(activity)) {
+            saveBase64ToDownloads(activity, base64Data, filename, mimeType);
+            return;
         }
+        File tempBlob = spillBase64ToCache(activity, base64Data);
+        if (tempBlob == null) {
+            Toast.makeText(activity, "Failed to prepare file for download", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        DownloadTask task = new DownloadTask(null, null, filename, mimeType, 0, tempBlob);
+        requestStoragePermission(activity, task);
+    }
+
+    private static File spillBase64ToCache(Context context, String dataUrlOrBase64) {
+        if (context == null || dataUrlOrBase64 == null) {
+            return null;
+        }
+        try {
+            String base64 = dataUrlOrBase64;
+            int comma = base64.indexOf(',');
+            if (comma >= 0) {
+                base64 = base64.substring(comma + 1);
+            }
+            long estimatedBytes = ((long) base64.length() * 3L) / 4L;
+            if (estimatedBytes > MAX_BLOB_BYTES) {
+                throw new IOException("blob exceeds the 64 MiB download limit");
+            }
+            byte[] bytes = Base64.decode(base64, Base64.DEFAULT);
+            File cacheDir = context.getCacheDir();
+            File temp = new File(cacheDir, PENDING_BLOB_PREFIX + System.currentTimeMillis() + PENDING_BLOB_SUFFIX);
+            try (FileOutputStream fos = new FileOutputStream(temp)) {
+                fos.write(bytes);
+                fos.flush();
+            }
+            return temp;
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to spill pending blob to cache", e);
+            return null;
+        }
+    }
+
+    private static void saveTempBlobToDownloads(final Context context, final File tempFile,
+                                                final String filename, final String mimeType) {
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    File downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+                    if (!downloadsDir.exists() && !downloadsDir.mkdirs() && !downloadsDir.isDirectory()) {
+                        throw new IOException("cannot create Downloads directory");
+                    }
+                    String name = safeFileName(filename);
+                    if (name.isEmpty()) {
+                        name = "download_" + System.currentTimeMillis();
+                    }
+                    File target = getSafeUniqueFile(downloadsDir, name);
+                    try (InputStream in = new java.io.FileInputStream(tempFile);
+                         OutputStream out = new FileOutputStream(target)) {
+                        byte[] buf = new byte[16384];
+                        int n;
+                        while ((n = in.read(buf)) != -1) {
+                            out.write(buf, 0, n);
+                        }
+                        out.flush();
+                    }
+                    final File savedFile = target;
+                    MediaScannerConnection.scanFile(context, new String[]{savedFile.getAbsolutePath()}, null, null);
+                    new Handler(Looper.getMainLooper()).post(new Runnable() {
+                        @Override
+                        public void run() {
+                            Toast.makeText(context, "Saved to Downloads: " + savedFile.getName(), Toast.LENGTH_LONG).show();
+                        }
+                    });
+                } catch (final Exception e) {
+                    Log.e(TAG, "Failed to move spilled blob to Downloads", e);
+                    new Handler(Looper.getMainLooper()).post(new Runnable() {
+                        @Override
+                        public void run() {
+                            Toast.makeText(context, "Failed to save file: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                        }
+                    });
+                } finally {
+                    try {
+                        tempFile.delete();
+                    } catch (Throwable ignored) {
+                    }
+                }
+            }
+        }).start();
     }
 
     private static void executeTask(final Activity activity, final WebView webView, final DownloadTask task) {
@@ -130,9 +282,9 @@ public final class FileDownloader {
             return;
         }
 
-        // Case 1: Base64 blob data
-        if (task.base64Data != null) {
-            saveBase64ToDownloads(activity, task.base64Data, task.contentDisposition, task.mimeType);
+        // Case 1: Spilled temp blob file
+        if (task.pendingBlobFile != null) {
+            saveTempBlobToDownloads(activity, task.pendingBlobFile, task.contentDisposition, task.mimeType);
             return;
         }
 
@@ -148,7 +300,7 @@ public final class FileDownloader {
                 String safeName = URLUtil.guessFileName(rawUrl, task.contentDisposition, task.mimeType);
                 extractBlobViaJs(webView, rawUrl, safeName, task.mimeType);
             } else {
-                Toast.makeText(activity, "Невозможно скачать blob без WebView", Toast.LENGTH_SHORT).show();
+                Toast.makeText(activity, "Cannot download blob without WebView", Toast.LENGTH_SHORT).show();
             }
             return;
         }
@@ -161,7 +313,7 @@ public final class FileDownloader {
                 || uri.getHost() == null || uri.getHost().isEmpty()
                 || uri.getUserInfo() != null) {
             Log.w(TAG, "refusing non-web or credential-bearing download URL");
-            Toast.makeText(activity, "Недопустимый адрес загрузки", Toast.LENGTH_SHORT).show();
+            Toast.makeText(activity, "Invalid download URL", Toast.LENGTH_SHORT).show();
             return;
         }
         if (TrustedCoreOrigin.matches(uri, RuntimeConfig.httpsPort(activity))) {
@@ -181,7 +333,7 @@ public final class FileDownloader {
                 fileName = "download_" + System.currentTimeMillis();
             }
             request.setTitle(fileName);
-            request.setDescription("Скачивание файла");
+            request.setDescription("Downloading file");
             request.allowScanningByMediaScanner();
             request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
             request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName);
@@ -197,7 +349,7 @@ public final class FileDownloader {
             DownloadManager dm = (DownloadManager) activity.getSystemService(Context.DOWNLOAD_SERVICE);
             if (dm != null) {
                 dm.enqueue(request);
-                Toast.makeText(activity, "Скачивание: " + fileName, Toast.LENGTH_SHORT).show();
+                Toast.makeText(activity, "Downloading: " + fileName, Toast.LENGTH_SHORT).show();
                 Log.i(TAG, "Download enqueued: " + fileName + " url="
                         + SensitiveDataRedactor.safeUrl(rawUrl));
             }
@@ -273,7 +425,7 @@ public final class FileDownloader {
                     new Handler(Looper.getMainLooper()).post(new Runnable() {
                         @Override
                         public void run() {
-                            Toast.makeText(context, "Сохранено в Загрузки: " + savedFile.getName(), Toast.LENGTH_LONG).show();
+                            Toast.makeText(context, "Saved to Downloads: " + savedFile.getName(), Toast.LENGTH_LONG).show();
                         }
                     });
                     Log.i(TAG, "Blob saved to: " + savedFile.getAbsolutePath());
@@ -282,7 +434,7 @@ public final class FileDownloader {
                     new Handler(Looper.getMainLooper()).post(new Runnable() {
                         @Override
                         public void run() {
-                            Toast.makeText(context, "Ошибка сохранения файла: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                            Toast.makeText(context, "Failed to save file: " + e.getMessage(), Toast.LENGTH_SHORT).show();
                         }
                     });
                 }
@@ -343,7 +495,7 @@ public final class FileDownloader {
                     new Handler(Looper.getMainLooper()).post(new Runnable() {
                         @Override
                         public void run() {
-                            Toast.makeText(activity, "Сохранено в Загрузки: " + savedFile.getName(), Toast.LENGTH_LONG).show();
+                            Toast.makeText(activity, "Saved to Downloads: " + savedFile.getName(), Toast.LENGTH_LONG).show();
                         }
                     });
                     Log.i(TAG, "Direct download saved: " + savedFile.getAbsolutePath());
@@ -352,7 +504,7 @@ public final class FileDownloader {
                     new Handler(Looper.getMainLooper()).post(new Runnable() {
                         @Override
                         public void run() {
-                            Toast.makeText(activity, "Ошибка скачивания: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                            Toast.makeText(activity, "Download failed: " + e.getMessage(), Toast.LENGTH_SHORT).show();
                         }
                     });
                 }
