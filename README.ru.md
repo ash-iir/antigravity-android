@@ -42,13 +42,17 @@
 
 ### Превью приложения
 
-<div align="center">
+<p align="center">
+  <a href="docs/assets/preview_1.png"><img src="docs/assets/preview_1.png" width="165" alt="Голосовой режим" title="Голосовой режим" /></a>
+  <a href="docs/assets/preview_2.png"><img src="docs/assets/preview_2.png" width="165" alt="Диагностика MCP" title="Диагностика MCP" /></a>
+  <a href="docs/assets/preview_3.png"><img src="docs/assets/preview_3.png" width="165" alt="Настройки и права" title="Настройки и права" /></a>
+  <a href="docs/assets/preview_4.png"><img src="docs/assets/preview_4.png" width="165" alt="Граф Swarm" title="Граф Swarm" /></a>
+  <a href="docs/assets/preview_5.png"><img src="docs/assets/preview_5.png" width="165" alt="Улей Swarm" title="Улей Swarm" /></a>
+</p>
 
-| Голосовой режим | Диагностика MCP | Настройки и права | Граф Swarm | Улей Swarm |
-| :---: | :---: | :---: | :---: | :---: |
-| <a href="docs/assets/preview_1.png"><img src="docs/assets/preview_1.png" width="180" alt="Голосовой режим" /></a> | <a href="docs/assets/preview_2.png"><img src="docs/assets/preview_2.png" width="180" alt="Диагностика MCP" /></a> | <a href="docs/assets/preview_3.png"><img src="docs/assets/preview_3.png" width="180" alt="Настройки и права" /></a> | <a href="docs/assets/preview_4.png"><img src="docs/assets/preview_4.png" width="180" alt="Граф Swarm" /></a> | <a href="docs/assets/preview_5.png"><img src="docs/assets/preview_5.png" width="180" alt="Улей Swarm" /></a> |
-
-</div>
+<p align="center">
+  <sub>Голосовой режим &bull; Диагностика MCP &bull; Настройки и права &bull; Граф Swarm &bull; Улей Swarm</sub>
+</p>
 
 ---
 

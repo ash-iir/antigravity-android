@@ -43,13 +43,17 @@ No PRoot, chroot, or virtualization overhead. Antigravity runs **bare-metal insi
 
 ### App Previews
 
-<div align="center">
+<p align="center">
+  <a href="docs/assets/preview_1.png"><img src="docs/assets/preview_1.png" width="165" alt="Voice Mode" title="Voice Mode" /></a>
+  <a href="docs/assets/preview_2.png"><img src="docs/assets/preview_2.png" width="165" alt="MCP Server Diagnostics" title="MCP Diagnostics" /></a>
+  <a href="docs/assets/preview_3.png"><img src="docs/assets/preview_3.png" width="165" alt="Settings & Permissions" title="Settings & Permissions" /></a>
+  <a href="docs/assets/preview_4.png"><img src="docs/assets/preview_4.png" width="165" alt="Swarm Mention Graph" title="Swarm Graph" /></a>
+  <a href="docs/assets/preview_5.png"><img src="docs/assets/preview_5.png" width="165" alt="Swarm Hive View" title="Swarm Hive" /></a>
+</p>
 
-| Voice Mode | MCP Diagnostics | Settings & Permissions | Swarm Graph | Swarm Hive |
-| :---: | :---: | :---: | :---: | :---: |
-| <a href="docs/assets/preview_1.png"><img src="docs/assets/preview_1.png" width="180" alt="Voice Mode" /></a> | <a href="docs/assets/preview_2.png"><img src="docs/assets/preview_2.png" width="180" alt="MCP Server Diagnostics" /></a> | <a href="docs/assets/preview_3.png"><img src="docs/assets/preview_3.png" width="180" alt="Settings & Permissions" /></a> | <a href="docs/assets/preview_4.png"><img src="docs/assets/preview_4.png" width="180" alt="Swarm Mention Graph" /></a> | <a href="docs/assets/preview_5.png"><img src="docs/assets/preview_5.png" width="180" alt="Swarm Hive View" /></a> |
-
-</div>
+<p align="center">
+  <sub>Voice Mode &bull; MCP Diagnostics &bull; Settings &amp; Permissions &bull; Swarm Graph &bull; Swarm Hive</sub>
+</p>
 
 ---
 
