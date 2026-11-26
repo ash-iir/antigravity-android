@@ -193,6 +193,180 @@ run().catch((err) => {
   process.exit(1);
 });
 EOF
+
+    # Behavioral test: __agHandleBack() steps back inside topmost overlay,
+    # clicks deepest visible non-inert Back button, and returns false at root.
+    node - "$TMP/web/generated/patches/back_navigation.js" <<'EOF'
+const fs = require('fs');
+const vm = require('vm');
+const assert = require('assert');
+
+const code = fs.readFileSync(process.argv[2], 'utf8');
+
+function makeNode(opts) {
+  const attrs = Object.assign({}, opts.attrs || {});
+  const node = {
+    tagName: (opts.tagName || 'DIV').toUpperCase(),
+    className: opts.className || '',
+    disabled: Boolean(opts.disabled),
+    style: Object.assign({ display: 'block', visibility: 'visible', zIndex: 'auto' }, opts.style || {}),
+    rect: opts.rect || { width: 100, height: 40 },
+    parent: null,
+    children: [],
+    clicks: 0,
+    getAttribute(name) {
+      return Object.prototype.hasOwnProperty.call(attrs, name) ? attrs[name] : null;
+    },
+    hasAttribute(name) {
+      return Object.prototype.hasOwnProperty.call(attrs, name);
+    },
+    getBoundingClientRect() {
+      return this.rect;
+    },
+    click() {
+      this.clicks += 1;
+    },
+    matches(sel) {
+      const parts = sel.split(',').map((s) => s.trim()).filter(Boolean);
+      return parts.some((p) => matchSimple(this, p));
+    },
+    closest(sel) {
+      let cur = this;
+      while (cur) {
+        if (cur.matches(sel)) return cur;
+        cur = cur.parent;
+      }
+      return null;
+    },
+    querySelectorAll(sel) {
+      const out = [];
+      function walk(n) {
+        for (const ch of n.children) {
+          if (ch.matches(sel)) out.push(ch);
+          walk(ch);
+        }
+      }
+      walk(this);
+      return out;
+    },
+    append(...kids) {
+      for (const k of kids) {
+        k.parent = this;
+        this.children.push(k);
+      }
+      return this;
+    }
+  };
+  return node;
+}
+
+function matchSimple(el, sel) {
+  if (sel === '[inert]') return el.hasAttribute('inert');
+  if (sel === '[aria-hidden="true"]') return el.getAttribute('aria-hidden') === 'true';
+  if (sel === '[data-bottom-sheet-popup]:not([data-closed])') {
+    return el.hasAttribute('data-bottom-sheet-popup') && !el.hasAttribute('data-closed');
+  }
+  if (sel === '.settings-modal-container:not([aria-hidden="true"])') {
+    return el.className.split(/\s+/).includes('settings-modal-container') &&
+      el.getAttribute('aria-hidden') !== 'true';
+  }
+  if (sel === '[role="dialog"]') {
+    return el.getAttribute('role') === 'dialog';
+  }
+  if (sel === 'button[aria-label="Back"]:not([disabled])') {
+    return el.tagName === 'BUTTON' &&
+      el.getAttribute('aria-label') === 'Back' &&
+      !el.disabled && !el.hasAttribute('disabled');
+  }
+  return false;
+}
+
+const docRoot = makeNode({ tagName: 'BODY' });
+const sandbox = {
+  console,
+  document: {
+    querySelectorAll: (sel) => docRoot.querySelectorAll(sel)
+  },
+  getComputedStyle: (el) => el.style
+};
+sandbox.window = sandbox;
+sandbox.self = sandbox;
+sandbox.globalThis = sandbox;
+
+vm.runInNewContext(code, sandbox);
+assert.strictEqual(typeof sandbox.__agHandleBack, 'function', '__agHandleBack must be exposed');
+
+// 1. No overlay open -> false.
+assert.strictEqual(sandbox.__agHandleBack(), false, 'no overlay should return false');
+
+// 2. Settings root (depth 0, no Back button) -> false.
+const settingsModal = makeNode({
+  className: 'settings-modal-container',
+  style: { zIndex: '50' }
+});
+docRoot.append(settingsModal);
+assert.strictEqual(sandbox.__agHandleBack(), false, 'settings root without Back button should return false');
+
+// 3. Nested Back buttons + inert panel + hidden button:
+//    - btnOuter (visible, active)
+//    - btnNested (visible, active, deepest in DOM -> must be clicked)
+//    - btnInert (inside [inert] panel later in DOM -> must be skipped)
+//    - btnHidden (display:none later in DOM -> must be skipped)
+const outerPanel = makeNode({});
+const btnOuter = makeNode({ tagName: 'BUTTON', attrs: { 'aria-label': 'Back' } });
+outerPanel.append(btnOuter);
+
+const nestedPanel = makeNode({});
+const btnNested = makeNode({ tagName: 'BUTTON', attrs: { 'aria-label': 'Back' } });
+nestedPanel.append(btnNested);
+
+const inertPanel = makeNode({ attrs: { inert: '' } });
+const btnInert = makeNode({ tagName: 'BUTTON', attrs: { 'aria-label': 'Back' } });
+inertPanel.append(btnInert);
+
+const hiddenPanel = makeNode({});
+const btnHidden = makeNode({
+  tagName: 'BUTTON',
+  attrs: { 'aria-label': 'Back' },
+  style: { display: 'none' }
+});
+hiddenPanel.append(btnHidden);
+
+settingsModal.append(outerPanel, nestedPanel, inertPanel, hiddenPanel);
+
+assert.strictEqual(sandbox.__agHandleBack(), true, 'nested visible Back button should be handled');
+assert.strictEqual(btnNested.clicks, 1, 'deepest active Back button should be clicked');
+assert.strictEqual(btnOuter.clicks, 0, 'outer Back button should not be clicked first');
+assert.strictEqual(btnInert.clicks, 0, 'inert panel Back button must be skipped');
+assert.strictEqual(btnHidden.clicks, 0, 'hidden Back button must be skipped');
+
+// 4. Higher z-index bottom sheet on top takes precedence over settings modal.
+const topSheet = makeNode({
+  attrs: { 'data-bottom-sheet-popup': '' },
+  style: { zIndex: '100' }
+});
+const sheetBack = makeNode({ tagName: 'BUTTON', attrs: { 'aria-label': 'Back' } });
+topSheet.append(sheetBack);
+docRoot.append(topSheet);
+
+assert.strictEqual(sandbox.__agHandleBack(), true, 'topmost overlay Back button should be handled');
+assert.strictEqual(sheetBack.clicks, 1, 'higher z-index overlay Back button should be clicked');
+assert.strictEqual(btnNested.clicks, 1, 'lower overlay Back button should not be clicked');
+
+// 5. Only inert Back button in topmost overlay -> returns false.
+const inertOnlyDialog = makeNode({
+  attrs: { role: 'dialog' },
+  style: { zIndex: '200' }
+});
+const inertWrap = makeNode({ attrs: { inert: '' } });
+const btnOnlyInert = makeNode({ tagName: 'BUTTON', attrs: { 'aria-label': 'Back' } });
+inertWrap.append(btnOnlyInert);
+inertOnlyDialog.append(inertWrap);
+docRoot.append(inertOnlyDialog);
+
+assert.strictEqual(sandbox.__agHandleBack(), false, 'overlay with only inert Back button should return false');
+assert.strictEqual(btnOnlyInert.clicks, 0, 'inert Back button must not be clicked');
+EOF
 fi
 
 echo "web build selftest: OK"

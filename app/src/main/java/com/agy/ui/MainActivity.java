@@ -489,9 +489,8 @@ public class MainActivity extends Activity
 
     @Override
     public void onBackPressed() {
-        if (!BackNavigator.handle(webViewHost != null ? webViewHost.getWebView() : null)) {
-            super.onBackPressed();
-        }
+        WebView wv = webViewHost != null ? webViewHost.getWebView() : null;
+        BackNavigator.handle(this, wv, () -> MainActivity.super.onBackPressed());
     }
 
     private void requestAppPermissions() {

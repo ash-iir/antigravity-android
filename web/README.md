@@ -81,6 +81,7 @@ web/
 │       ├── theme_sync.js
 │       ├── agent_notify.js
 │       ├── clipboard_image_paste.js
+│       ├── back_navigation.js
 │       └── startup_ready.js
 ├── src/                          # Modular source fragments
 │   ├── boot/                     # Early boot fragments
@@ -113,6 +114,7 @@ web/
 | **`patches/theme_sync.js`** | IIFE | ~4.8 KB | Observes `<html>`/`<body>` theme classes and forwards token-gated changes to `AndroidBridge`. |
 | **`patches/agent_notify.js`** | IIFE | ~3.2 KB | Bridges agent audio cues and Notification API events to native clickable Android alerts. |
 | **`patches/clipboard_image_paste.js`** | IIFE | ~5.8 KB | Handles clipboard and IME (`commitContent`) image paste into the chat composer. |
+| **`patches/back_navigation.js`** | IIFE | ~3.2 KB | Exposes `window.__agHandleBack()` to step back one level inside open Settings/modal/bottom-sheet overlays before falling back to WebView history. |
 | **`patches/startup_ready.js`** | IIFE | ~4.7 KB | Signals first meaningful DOM render (`onUiReady`) and captures fatal JS errors. |
 | **`main.js`** | Raw + Patch | ~9.5 MB | Production React bundle patched by `patch_main.py`. |
 
@@ -181,4 +183,4 @@ web/
 bash web/tests/selftest.sh
 ```
 
-Verifies isolated copy integrity, confirms upstream `web/main.js` SHA-256 stays unmodified, validates all generated bundles (`node --check`), checks there are no double-wrapped IIFEs, and runs a Node.js behavioral check confirming `agy:host-resume` resets stalled `StreamAgentStateUpdates` streams (deferring while hidden) without aborting caller signals or unary/audio RPCs.
+Verifies isolated copy integrity, confirms upstream `web/main.js` SHA-256 stays unmodified, validates all generated bundles (`node --check`), checks there are no double-wrapped IIFEs, and runs Node.js behavioral checks confirming `agy:host-resume` resets stalled `StreamAgentStateUpdates` streams (deferring while hidden) without aborting caller signals or unary/audio RPCs and `window.__agHandleBack()` steps back inside topmost overlays while skipping inert/hidden Back buttons and returning `false` at root.

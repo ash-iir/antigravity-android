@@ -62,3 +62,6 @@ src/patches/agent_notify/install.js
 
 bundle iife patches/clipboard_image_paste.js
 src/patches/clipboard_image_paste/install.js
+
+bundle iife patches/back_navigation.js
+src/patches/back_navigation/install.js
