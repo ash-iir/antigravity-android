@@ -15,7 +15,7 @@ on:
       tag_name:
         description: 'Release Tag (e.g. v2.34.0)'
         required: false
-        default: 'v2.34.14'
+        default: 'v2.34.15'
       draft:
         description: 'Create Draft Release'
         type: boolean
@@ -151,8 +151,9 @@ jobs:
 
             ---
 
-            ### What's New in v2.34.14
+            ### What's New in v2.34.15
 
+            * **Settings → Account Fix:** Fixed `patch_main.py` hook placement and variable shadowing in the Account screen (`GOb`) so tapping the Account profile row opens smoothly alongside **Settings → Accounts**.
             * **Account Vault & Instant Switcher:** Added **Settings → Accounts** and **Settings → Account → Saved Accounts** matching the native Settings design system, automatically saving logged-in credentials in an owner-only (`0600`) vault (`AccountVaultStore`) and enabling one-tap in-place account switching.
             * **Clean UI Overlay:** Removed the floating `AGY` pill and `QuickControlSheet` (`Antigravity Control`) modal overlay for an unobstructed chat workspace.
             * **Faster `pkg` Package Manager (`pkg_core.py`):** Mtime-cached `dpkg`/`Packages` indexing, full DFS dependency & upgrade planning with disk-space preflight, conditional `curl -z` updates, parallel `curl -Z --http2` downloads with per-file SHA256 mirror fallback, single-pass staged `.deb` validation/extraction with byte-length-preserving ELF prefix rewriting, `--keep-cache` flag, and de-prioritized `tuna` fallback in `repo.conf`.
@@ -168,4 +169,4 @@ jobs:
             ---
 
             > [!NOTE]
-            > **Seamless Upgrades:** Built with the consistent embedded signing keystore (`APP_VERSION_CODE=23414`). You can install this update directly over previous v2.x releases without uninstalling or losing local projects.
+            > **Seamless Upgrades:** Built with the consistent embedded signing keystore (`APP_VERSION_CODE=23415`). You can install this update directly over previous v2.x releases without uninstalling or losing local projects.

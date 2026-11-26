@@ -1,3 +1,20 @@
+# Antigravity for Android v2.34.15
+
+## Release Packages
+
+| Package | Application ID | Runtime Port | Description |
+| :--- | :--- | :--- | :--- |
+| **`antigravity.apk`** | `com.agy` | 45157 | Standard production release with original Google account checks. |
+| **`antigravity-region-bypass.apk`** | `com.agy` | 45157 | Region-bypass edition with account eligibility check bypass. |
+| **`SHA256SUMS.txt`** | — | — | Cryptographic SHA-256 checksums for verification. |
+
+## Changes & Fixes (v2.34.15)
+
+### 1. Settings → Account Screen Fix
+* Fixed a `web/patch_main.py` hook scoping bug where `GOb` (`Settings → Account`) failed to initialize `_agStore`/`_agRefreshStatus` and received shadowed local state, causing a blank screen when tapping the profile row.
+
+---
+
 # Antigravity for Android v2.34.14
 
 ## Release Packages

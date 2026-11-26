@@ -307,14 +307,23 @@ def inject_account_switcher(content):
     content = content.replace(ib_prefix, ib_prefix + ib_hook, 1)
 
     # 3. Inject hooks & Saved Accounts section into GOb (Account settings screen)
+    # Must patch specifically at GOb's header (gob_m) — NOT global replace, because
+    # earlier components like xOb also start with `var b=sd().core.authService`.
+    gob_win_offset = max(0, gob_idx - 2500)
+    gob_abs_start = gob_win_offset + gob_m.start()
+    gob_header_str = gob_m.group(0)
     gob_anchor_prefix = f"var {auth_svc_var}={sd_fn}().core.authService"
-    gob_hooks = f"var _agStore={cl_fn}(),_agRefreshStatus={kb_fn}();"
-    if gob_anchor_prefix not in content:
-        print("[web-patch] account switcher: GOb hook anchor missing", file=sys.stderr)
+    gob_hooks = (
+        f"var _agStore={cl_fn}(),_agRefreshStatus={kb_fn}(),"
+        f"_agAuthState={el_fn}({xk_sel}),_agRc={nj_fn}().get(\"isRemoteControl\")??!1;"
+    )
+    if gob_anchor_prefix not in gob_header_str:
+        print("[web-patch] account switcher: GOb hook anchor missing in GOb header", file=sys.stderr)
         return content, False
-    content = content.replace(gob_anchor_prefix, gob_hooks + gob_anchor_prefix, 1)
+    patched_gob_header = gob_header_str.replace(gob_anchor_prefix, gob_hooks + gob_anchor_prefix, 1)
+    content = content[:gob_abs_start] + patched_gob_header + content[gob_abs_start + len(gob_header_str):]
 
-    gob_tail_win = content[gob_idx:min(len(content), gob_idx + 5000)]
+    gob_tail_win = content[gob_idx:min(len(content), gob_idx + 5200)]
     gob_tail_m = re.search(
         r'("Sign In"\)\}\)\)\)\)),([A-Za-z0-9_$]+&&[A-Za-z0-9_$]+&&' + re.escape(react_id) + r'\.createElement\([A-Za-z0-9_$]+,\{deleteAllUserData:[A-Za-z0-9_$]+\}\))',
         gob_tail_win,
@@ -327,9 +336,9 @@ def inject_account_switcher(content):
         f"(window.__agAccountSwitcher?window.__agAccountSwitcher.renderSection({{"
         f"React:{react_id},LU:{lu_comp},PU:{pu_comp},NU:{nu_comp},OU:{ou_comp},"
         f"BI:{bi_comp},Dgb:{dgb_comp},Ew:{ew_comp},eE:{ee_comp},"
-        f"userStatus:{user_status_var},authState:{auth_state_var},authService:{auth_svc_var},"
+        f"userStatus:{user_status_var},authState:_agAuthState,authService:{auth_svc_var},"
         f"refreshUserStatus:_agRefreshStatus,getStoreState:()=>_agStore.getState(),"
-        f"closeSettings:{close_settings_var},isRemoteControl:{is_rc_var}}}):null)"
+        f"closeSettings:{close_settings_var},isRemoteControl:_agRc}}):null)"
     )
     content = content.replace(
         gob_tail_m.group(0),
