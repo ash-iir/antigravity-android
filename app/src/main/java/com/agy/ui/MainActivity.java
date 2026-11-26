@@ -238,6 +238,17 @@ public class MainActivity extends Activity
         handler.postDelayed(this::startCoreService, 400);
     }
 
+    /** Restarts CoreServerService without forcing runtime reinstallation (fallback for account switch). */
+    public void restartCoreForAccountSwitch() {
+        splash.clearFatal();
+        appLoaded = false;
+        loadedGeneration = -1;
+        splashDeadline = System.currentTimeMillis() + SPLASH_TIMEOUT_MS;
+        splash.showLoading();
+        CoreServiceLauncher.stop(this);
+        handler.postDelayed(this::startCoreService, 350);
+    }
+
     /**
      * Page load finished, but the Web UI has NOT necessarily painted yet (the
      * app bundle is large), so the splash is NOT dismissed here. Dismissal is
@@ -329,6 +340,9 @@ public class MainActivity extends Activity
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
+        if (oauthManager != null) {
+            oauthManager.handleDeepLink(this, intent, null);
+        }
     }
 
     @Override
@@ -364,6 +378,15 @@ public class MainActivity extends Activity
             AppLifecycle.resume(webViewHost.getWebView());
         }
         refreshTheme();
+        if (OAuthTokenStore.hasToken(this)) {
+            final android.content.Context appCtx = getApplicationContext();
+            new Thread(new Runnable() {
+                @Override
+                public void run() {
+                    com.agy.oauth.AccountVaultStore.syncCurrentAccount(appCtx, null);
+                }
+            }, "AgyVaultSync").start();
+        }
         handler.removeCallbacks(pollServer);
         handler.post(pollServer);
     }

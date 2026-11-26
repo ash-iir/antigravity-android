@@ -46,6 +46,9 @@ public final class DeepLinkHandler {
         Log.i(OAuthConstants.TAG, "auth-success deep link received: "
                 + SensitiveDataRedactor.safeUrl(data.toString())
                 + " tokenPresent=" + OAuthTokenStore.hasToken(activity));
+        if (OAuthTokenStore.hasToken(activity)) {
+            AccountVaultStore.syncCurrentAccount(activity.getApplicationContext(), null);
+        }
         if (onSuccess != null) {
             onSuccess.run();
         }

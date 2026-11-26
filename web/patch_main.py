@@ -2,8 +2,9 @@
 """
 web/patch_main.py - Dynamic patcher for web/main.js.
 
-Locates the Appearance settings block and injects the Desktop Mode toggle
-if not already present. Safe, idempotent, and resilient to upstream changes.
+Locates the Appearance settings block and injects the Desktop Mode toggle,
+and integrates the Account Vault & Switcher into Settings -> Accounts and
+Settings -> Account. Safe, idempotent, and resilient to upstream changes.
 """
 
 import sys
@@ -54,10 +55,28 @@ def patch_main(file_path):
 
     if "Desktop Mode" in content or "ag_desktop_mode" in content:
         print("[web-patch] Desktop Mode toggle already present in main.js")
-        if modified:
-            with open(file_path, "w", encoding="utf-8") as f:
-                f.write(content)
-        return True
+    else:
+        content, ok = inject_desktop_mode(content)
+        if not ok:
+            return False
+        modified = True
+
+    if "__agAccountSwitcher" in content or "AgAccountsScreen" in content:
+        print("[web-patch] Account Switcher already present in main.js")
+    else:
+        content, ok = inject_account_switcher(content)
+        if not ok:
+            return False
+        modified = True
+
+    if modified:
+        with open(file_path, "w", encoding="utf-8") as f:
+            f.write(content)
+
+    return True
+
+
+def inject_desktop_mode(content):
 
     # 1. JSX Theme element injection: find Theme element in Appearance
     theme_idx = content.find('{label:"Theme"')
@@ -147,11 +166,233 @@ def patch_main(file_path):
 
     content = content.replace(orig_theme, injected_theme, 1)
 
-    with open(file_path, "w", encoding="utf-8") as f:
-        f.write(content)
-
     print("[web-patch] Successfully patched Desktop Mode toggle into main.js (mobile by default, English)")
-    return True
+    return content, True
+
+
+def inject_account_switcher(content):
+    # 1. Discover Settings & auth symbols dynamically using bounded slices
+    gob_idx = content.find("Manage your plan, credentials, and general preferences.")
+    if gob_idx == -1:
+        print("[web-patch] account switcher: GOb anchor not found", file=sys.stderr)
+        return content, False
+    gob_win = content[max(0, gob_idx - 2500):min(len(content), gob_idx + 4500)]
+
+    gob_m = re.search(
+        r'var\s+([A-Za-z0-9_$]+)=\(\{isActive:[A-Za-z0-9_$]+\}=\{\}\)=>\{var\s+([A-Za-z0-9_$]+)=([A-Za-z0-9_$]+)\(\)\.core\.authService,.*?'
+        r'([A-Za-z0-9_$]+)=([A-Za-z0-9_$]+)\(([A-Za-z0-9_$]+)\),([A-Za-z0-9_$]+)=\5\(([A-Za-z0-9_$]+)\),.*?'
+        r'([A-Za-z0-9_$]+)=([A-Za-z0-9_$]+)\(\),.*?'
+        r'([A-Za-z0-9_$]+)=([A-Za-z0-9_$]+)\(\),.*?'
+        r'([A-Za-z0-9_$]+)=\9\.get\("isRemoteControl"\)\?\?!1,([A-Za-z0-9_$]+)=\11\.useCloseSettings\(\)',
+        gob_win,
+        re.DOTALL,
+    )
+    if not gob_m:
+        print("[web-patch] account switcher: GOb header pattern not matched", file=sys.stderr)
+        return content, False
+
+    auth_svc_var = gob_m.group(2)
+    sd_fn = gob_m.group(3)
+    user_status_var = gob_m.group(4)
+    el_fn = gob_m.group(5)
+    sb_sel = gob_m.group(6)
+    auth_state_var = gob_m.group(7)
+    xk_sel = gob_m.group(8)
+    nj_fn = gob_m.group(10)
+    ol_fn = gob_m.group(12)
+    is_rc_var = gob_m.group(13)
+    close_settings_var = gob_m.group(14)
+
+    # Locate LU, PU, NU, OU, BI, Dgb, Ew, eE, react_id
+    lu_m = re.search(
+        r'([A-Za-z0-9_$]+)\.createElement\(([A-Za-z0-9_$]+),\{title:"Account",description:"Manage your plan, credentials, and general preferences\."\},.*?'
+        r'\1\.createElement\(([A-Za-z0-9_$]+),\{title:"Account"\},.*?'
+        r'\1\.createElement\(([A-Za-z0-9_$]+),null,[A-Za-z0-9_$]+&&\1\.createElement\(([A-Za-z0-9_$]+),',
+        gob_win,
+        re.DOTALL,
+    )
+    if not lu_m:
+        print("[web-patch] account switcher: LU/PU/NU/OU pattern not matched", file=sys.stderr)
+        return content, False
+    react_id = lu_m.group(1)
+    lu_comp = lu_m.group(2)
+    pu_comp = lu_m.group(3)
+    nu_comp = lu_m.group(4)
+    ou_comp = lu_m.group(5)
+
+    bi_m = re.search(
+        rf'{re.escape(react_id)}\.createElement\(([A-Za-z0-9_$]+),\{{variant:"secondary",size:"sm","data-testid":"g1-referral-invite-button"',
+        gob_win,
+        re.DOTALL,
+    )
+    if not bi_m:
+        print("[web-patch] account switcher: BI button component not matched", file=sys.stderr)
+        return content, False
+    bi_comp = bi_m.group(1)
+
+    nav_idx = content.find('"settings-nav-item-Account"')
+    if nav_idx == -1:
+        print("[web-patch] account switcher: settings-nav-item-Account not found", file=sys.stderr)
+        return content, False
+    dgb_m = re.search(
+        rf'{re.escape(react_id)}\.createElement\(([A-Za-z0-9_$]+),\{{src:',
+        content[nav_idx:min(len(content), nav_idx + 400)],
+        re.DOTALL,
+    )
+    if not dgb_m:
+        print("[web-patch] account switcher: Dgb avatar component not matched", file=sys.stderr)
+        return content, False
+    dgb_comp = dgb_m.group(1)
+
+    ew_idx = content.find('name:"arrow_back"')
+    if ew_idx == -1:
+        print("[web-patch] account switcher: arrow_back icon not found", file=sys.stderr)
+        return content, False
+    ew_m = re.search(
+        rf'{re.escape(react_id)}\.createElement\(([A-Za-z0-9_$]+),\{{name:"arrow_back"',
+        content[max(0, ew_idx - 80):min(len(content), ew_idx + 40)],
+        re.DOTALL,
+    )
+    if not ew_m:
+        print("[web-patch] account switcher: Ew icon component not matched", file=sys.stderr)
+        return content, False
+    ew_comp = ew_m.group(1)
+
+    ee_idx = content.find('"confirm-delete-all-user-data"')
+    if ee_idx == -1:
+        print("[web-patch] account switcher: confirm-delete-all-user-data not found", file=sys.stderr)
+        return content, False
+    ee_m = re.search(
+        rf'{re.escape(react_id)}\.createElement\(([A-Za-z0-9_$]+),\{{size:16\}}',
+        content[ee_idx:min(len(content), ee_idx + 300)],
+        re.DOTALL,
+    )
+    if not ee_m:
+        print("[web-patch] account switcher: eE spinner component not matched", file=sys.stderr)
+        return content, False
+    ee_comp = ee_m.group(1)
+
+    # Locate cl (useStore) and K_b (refreshUserStatus hook)
+    kb_idx = content.find('[UserStatusSync] Failed to fetch user status:')
+    if kb_idx == -1:
+        print("[web-patch] account switcher: UserStatusSync anchor not found", file=sys.stderr)
+        return content, False
+    kb_win = content[kb_idx:min(len(content), kb_idx + 1200)]
+    kb_m = re.search(
+        rf'function\s+([A-Za-z0-9_$]+)\(\)\{{var\s+[A-Za-z0-9_$]+=([A-Za-z0-9_$]+)\(\),[A-Za-z0-9_$]+=\(0,{re.escape(react_id)}\.useContext\)',
+        kb_win,
+        re.DOTALL,
+    )
+    if not kb_m:
+        print("[web-patch] account switcher: K_b / cl hook pattern not matched", file=sys.stderr)
+        return content, False
+    kb_fn = kb_m.group(1)
+    cl_fn = kb_m.group(2)
+
+    # 2. Auto-capture hook inside I_b when getUserStatus succeeds
+    ib_win = content[max(0, kb_idx - 800):kb_idx]
+    ib_m = re.search(
+        r'(function\s+[A-Za-z0-9_$]+\(\{agentService:[A-Za-z0-9_$]+,store:([A-Za-z0-9_$]+),.*?'
+        r'\{userStatus:([A-Za-z0-9_$]+)\}=[^;]+;if\(![A-Za-z0-9_$]+\(\)\)\{if\(\3\)\{)',
+        ib_win,
+        re.DOTALL,
+    )
+    if not ib_m:
+        print("[web-patch] account switcher: I_b userStatus sync hook not matched", file=sys.stderr)
+        return content, False
+    ib_prefix = ib_m.group(1)
+    ib_store = ib_m.group(2)
+    ib_status = ib_m.group(3)
+    ib_hook = f"try{{window.__agAccountSwitcher&&{ib_status}.email&&window.__agAccountSwitcher.syncProfile({ib_status},{xk_sel}({ib_store}.getState())?.context)}}catch(_){{}}"
+    content = content.replace(ib_prefix, ib_prefix + ib_hook, 1)
+
+    # 3. Inject hooks & Saved Accounts section into GOb (Account settings screen)
+    gob_anchor_prefix = f"var {auth_svc_var}={sd_fn}().core.authService"
+    gob_hooks = f"var _agStore={cl_fn}(),_agRefreshStatus={kb_fn}();"
+    if gob_anchor_prefix not in content:
+        print("[web-patch] account switcher: GOb hook anchor missing", file=sys.stderr)
+        return content, False
+    content = content.replace(gob_anchor_prefix, gob_hooks + gob_anchor_prefix, 1)
+
+    gob_tail_win = content[gob_idx:min(len(content), gob_idx + 5000)]
+    gob_tail_m = re.search(
+        r'("Sign In"\)\}\)\)\)\)),([A-Za-z0-9_$]+&&[A-Za-z0-9_$]+&&' + re.escape(react_id) + r'\.createElement\([A-Za-z0-9_$]+,\{deleteAllUserData:[A-Za-z0-9_$]+\}\))',
+        gob_tail_win,
+        re.DOTALL,
+    )
+    if not gob_tail_m:
+        print("[web-patch] account switcher: GOb Saved Accounts insertion anchor not matched", file=sys.stderr)
+        return content, False
+    section_call = (
+        f"(window.__agAccountSwitcher?window.__agAccountSwitcher.renderSection({{"
+        f"React:{react_id},LU:{lu_comp},PU:{pu_comp},NU:{nu_comp},OU:{ou_comp},"
+        f"BI:{bi_comp},Dgb:{dgb_comp},Ew:{ew_comp},eE:{ee_comp},"
+        f"userStatus:{user_status_var},authState:{auth_state_var},authService:{auth_svc_var},"
+        f"refreshUserStatus:_agRefreshStatus,getStoreState:()=>_agStore.getState(),"
+        f"closeSettings:{close_settings_var},isRemoteControl:{is_rc_var}}}):null)"
+    )
+    content = content.replace(
+        gob_tail_m.group(0),
+        f"{gob_tail_m.group(1)},{section_call},{gob_tail_m.group(2)}",
+        1,
+    )
+
+    # 4. Register "Accounts" screen in Settings navigation (wMb, xMb, oXb)
+    wmb_target = '[{screen:"General"},'
+    wmb_idx = content.find(wmb_target)
+    if wmb_idx == -1:
+        print("[web-patch] account switcher: wMb screen list not matched", file=sys.stderr)
+        return content, False
+    content = content.replace(wmb_target, '[{screen:"General"},{screen:"Accounts",label:"Accounts"},', 1)
+
+    xmb_m = re.search(
+        r'(function\s+[A-Za-z0-9_$]+\(([A-Za-z0-9_$]+),([A-Za-z0-9_$]+)\)\{return\s+[A-Za-z0-9_$]+\.map\(([A-Za-z0-9_$]+)=>\4\.screen\)\.filter\(\4=>)(\(!([A-Za-z0-9_$]+)\.includes\(\4\)\|\|\3\.includes\(\4\)\)&&\2\(\4\)\)\})',
+        content[wmb_idx:min(len(content), wmb_idx + 700)],
+        re.DOTALL,
+    )
+    if not xmb_m:
+        print("[web-patch] account switcher: xMb filter pattern not matched", file=sys.stderr)
+        return content, False
+    xmb_c = xmb_m.group(4)
+    content = content.replace(
+        xmb_m.group(0),
+        f"{xmb_m.group(1)}{xmb_c}===\"Accounts\"||{xmb_m.group(5)}",
+        1,
+    )
+
+    oxb_idx = content.find('case "Account":return')
+    if oxb_idx == -1:
+        print("[web-patch] account switcher: oXb case Account not found", file=sys.stderr)
+        return content, False
+    oxb_m = re.search(
+        r'(function\s+[A-Za-z0-9_$]+\([A-Za-z0-9_$]+,[A-Za-z0-9_$]+=!0\)\{.*?switch\([A-Za-z0-9_$]+\)\{)(case\s+"Account":)',
+        content[max(0, oxb_idx - 200):min(len(content), oxb_idx + 60)],
+        re.DOTALL,
+    )
+    if not oxb_m:
+        print("[web-patch] account switcher: oXb switch pattern not matched", file=sys.stderr)
+        return content, False
+
+    ag_screen_comp = (
+        f"function AgAccountsScreen(){{"
+        f"var _u={el_fn}({sb_sel}),_au={el_fn}({xk_sel}),_as={sd_fn}().core.authService,"
+        f"_rf={kb_fn}(),_st={cl_fn}(),_cs={ol_fn}().useCloseSettings(),"
+        f"_rc={nj_fn}().get(\"isRemoteControl\")??!1;"
+        f"return window.__agAccountSwitcher?window.__agAccountSwitcher.renderScreen({{"
+        f"React:{react_id},LU:{lu_comp},PU:{pu_comp},NU:{nu_comp},OU:{ou_comp},"
+        f"BI:{bi_comp},Dgb:{dgb_comp},Ew:{ew_comp},eE:{ee_comp},"
+        f"userStatus:_u,authState:_au,authService:_as,"
+        f"refreshUserStatus:_rf,getStoreState:()=>_st.getState(),"
+        f"closeSettings:_cs,isRemoteControl:_rc}}):null}}"
+    )
+    content = content.replace(
+        oxb_m.group(0),
+        f"{ag_screen_comp}{oxb_m.group(1)}case \"Accounts\":return {react_id}.createElement(AgAccountsScreen,null);{oxb_m.group(2)}",
+        1,
+    )
+
+    print("[web-patch] Successfully patched Account Switcher into Settings -> Accounts and Account")
+    return content, True
 
 if __name__ == "__main__":
     path = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(__file__), "main.js")

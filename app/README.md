@@ -128,7 +128,8 @@ The core binary (`language_server`) is compiled for Linux/Glibc and runs on Andr
 
 `AndroidBridge` exposes a tightly scoped `@JavascriptInterface`:
 
-- **Token-Gated Mutation APIs:** State-mutating and sensitive methods (`onUiReady`, `onUiError`, `openDirectoryPicker`, `setTheme`, `setThemeByUser`, `onVisualThemeChanged`, `setDesktopMode`, `saveBlob`, `notifyAgentEvent`, `hasClipboardImage`, `requestClipboardImagePaste`, `readClipboardImage`) require `blobBridgeToken` verified with constant-time `MessageDigest.isEqual`.
+- **Token-Gated Mutation APIs:** State-mutating and sensitive methods (`onUiReady`, `onUiError`, `openDirectoryPicker`, `setTheme`, `setThemeByUser`, `onVisualThemeChanged`, `setDesktopMode`, `saveBlob`, `notifyAgentEvent`, `hasClipboardImage`, `requestClipboardImagePaste`, `readClipboardImage`, `getSavedAccounts`, `syncCurrentAccount`, `activateSavedAccount`, `removeSavedAccount`, `restartCoreForAccountSwitch`) require `blobBridgeToken` verified with constant-time `MessageDigest.isEqual`.
+- **Account Vault (`com.agy.oauth.AccountVaultStore`):** Persists sanitized profile metadata alongside owner-only (`0600`) snapshots of `jetski-standalone-oauth-token` in `files/.gemini/agy-account-vault.json`. Raw access/refresh tokens stay strictly in Java/disk and are never returned over `AndroidBridge`.
 - **Execution Isolation:** Arbitrary shell and root execution are excluded from `AndroidBridge`. Native root (`RootBridge`, `RootResilience`) stays in Java and shell helpers (`agy-root`, `su`, `sudo`, `agy-sys`), and `SplashController` destroys its `WebView` (`destroy()`) on `dismiss()`.
 
 ### 2.5. Dynamic Launcher Icons & Themes (`com.agy.theme`)
