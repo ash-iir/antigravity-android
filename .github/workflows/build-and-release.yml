@@ -15,7 +15,7 @@ on:
       tag_name:
         description: 'Release Tag (e.g. v2.34.0)'
         required: false
-        default: 'v2.34.14'
+        default: 'v2.34.15'
       draft:
         description: 'Create Draft Release'
         type: boolean
@@ -151,12 +151,18 @@ jobs:
 
             ---
 
-            ### What's New in v2.34.14
+            ### What's New in v2.34.15
+
+            * **Plugin OAuth `redirect_uri_mismatch` Fix:** Fixed Gmail / Google Workspace & MCP plugin OAuth `Error 400: redirect_uri_mismatch` by forcing local `REDIRECT` mode on localhost.
+            * **Step-by-Step Settings Back Navigation:** Fixed Android Back button in Settings to step back one screen at a time instead of closing Settings.
+            * **Built-in Multi-Account GitHub Plugin (`plugins/github/`):** Added a bundled local GitHub plugin under Customizations → Plugins supporting Add account with labels, PAT auth, and `GH_TOKEN`/`GITHUB_TOKEN` env delivery.
+
+            ### Previous Release Highlights (v2.34.14)
 
             * **Swarm Plugin & Node.js Reliability:** Added dynamic `node` shell bridge resolution, `nodejs-lts` auto-seeding in `env/seed-packages.txt`, `pkg` fallback wrapper overwrite on install, and post-startup builtin plugin sync so Swarm sidecars start cleanly out of the box.
             * **Background-Resume Stuck UI Fix:** Kept WebView and SSE streams alive when backgrounded and added host-resume stalled state stream force-reset across `MainActivity`, `WebViewLifecycle`, and `bridge.core.js`, preventing frozen UI after switching apps.
 
-            ### Previous Release Highlights (v2.34.13)
+            ### Earlier Highlights (v2.34.13)
 
             * **Clean UI Overlay:** Removed the floating `AGY` pill and `QuickControlSheet` (`Antigravity Control`) modal overlay for an unobstructed chat workspace.
             * **Faster `pkg` Package Manager (`pkg_core.py`):** Mtime-cached `dpkg`/`Packages` indexing, full DFS dependency & upgrade planning with disk-space preflight, conditional `curl -z` updates, parallel `curl -Z --http2` downloads with per-file SHA256 mirror fallback, single-pass staged `.deb` validation/extraction with byte-length-preserving ELF prefix rewriting, `--keep-cache` flag, and de-prioritized `tuna` fallback in `repo.conf`.
@@ -172,4 +178,4 @@ jobs:
             ---
 
             > [!NOTE]
-            > **Seamless Upgrades:** Built with the consistent embedded signing keystore (`APP_VERSION_CODE=23414`). You can install this update directly over previous v2.x releases without uninstalling or losing local projects.
+            > **Seamless Upgrades:** Built with the consistent embedded signing keystore (`APP_VERSION_CODE=23415`). You can install this update directly over previous v2.x releases without uninstalling or losing local projects.

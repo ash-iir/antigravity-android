@@ -1,3 +1,26 @@
+# Antigravity for Android v2.34.15
+
+## Release Packages
+
+| Package | Application ID | Runtime Port | Description |
+| :--- | :--- | :--- | :--- |
+| **`antigravity.apk`** | `com.agy` | 45157 | Standard production release with original Google account checks. |
+| **`antigravity-region-bypass.apk`** | `com.agy` | 45157 | Region-bypass edition with account eligibility check bypass. |
+| **`SHA256SUMS.txt`** | — | — | Cryptographic SHA-256 checksums for verification. |
+
+## Changes & Fixes (v2.34.15)
+
+### 1. Plugin OAuth `redirect_uri_mismatch` Fix
+* **Local `REDIRECT` Mode on Loopback:** Fixed Gmail / Google Workspace and MCP plugin OAuth `Error 400: redirect_uri_mismatch` by forcing local `REDIRECT` mode on localhost so OAuth callbacks match the registered local redirect URI.
+
+### 2. Step-by-Step Settings Back Navigation
+* **Android Back Button in Settings:** Updated Android Back navigation (`BackNavigator` + `back_navigation` web patch) to step back one screen at a time inside Settings instead of dismissing Settings immediately.
+
+### 3. Built-in Multi-Account GitHub Plugin
+* **Local GitHub Plugin (`plugins/github/`):** Bundled a built-in multi-account GitHub plugin under **Customizations → Plugins**, supporting labeled accounts with PAT authentication and `GH_TOKEN` / `GITHUB_TOKEN` environment variable delivery.
+
+---
+
 # Antigravity for Android v2.34.14
 
 ## Release Packages
