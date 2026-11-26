@@ -9,6 +9,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.util.Log;
 import android.view.View;
 import android.view.Window;
@@ -58,6 +59,7 @@ public class MainActivity extends Activity
     private static final long POLL_STARTUP_INTERVAL_MS = 50;
     private static final long POLL_READY_INTERVAL_MS = 1000;
     private static final long NETWORK_NOTIFY_DEBOUNCE_MS = 800;
+    private static final long HOST_RESUME_FALLBACK_DELAY_MS = 180;
 
     public static volatile MainActivity activeActivity;
     private static volatile boolean sInForeground = false;
@@ -83,8 +85,38 @@ public class MainActivity extends Activity
     private boolean activityResumed = false;
     private int loadedGeneration = -1;
     private long splashDeadline;
+    private long backgroundedAtMs = 0L;
+    private boolean wasStopped = false;
+    private boolean pendingHostResume = false;
+    private long pendingResumeBackgroundMs = 0L;
+    private boolean pendingResumeWasStopped = false;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
+
+    private final Runnable dispatchPendingHostResume = new Runnable() {
+        @Override
+        public void run() {
+            flushPendingHostResume();
+        }
+    };
+
+    private void flushPendingHostResume() {
+        if (!pendingHostResume) {
+            return;
+        }
+        pendingHostResume = false;
+        backgroundedAtMs = 0L;
+        wasStopped = false;
+        handler.removeCallbacks(dispatchPendingHostResume);
+        if (!activityResumed || !appLoaded || webViewHost == null) {
+            return;
+        }
+        WebView wv = webViewHost.getWebView();
+        if (wv == null) {
+            return;
+        }
+        AppLifecycle.notifyHostResume(wv, pendingResumeBackgroundMs, pendingResumeWasStopped);
+    }
 
     private final Runnable notifyWebViewNetworkOnline = new Runnable() {
         @Override
@@ -248,6 +280,51 @@ public class MainActivity extends Activity
         Log.i(TAG, "onPageFinished " + SensitiveDataRedactor.safeUrl(url));
     }
 
+    @Override
+    public void onRenderProcessGone(boolean didCrash) {
+        Log.e(TAG, "onRenderProcessGone didCrash=" + didCrash + "; recreating WebView");
+        if (isFinishing() || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1 && isDestroyed())) {
+            return;
+        }
+        pendingHostResume = false;
+        backgroundedAtMs = 0L;
+        wasStopped = false;
+        handler.removeCallbacks(dispatchPendingHostResume);
+        handler.removeCallbacks(notifyWebViewNetworkOnline);
+
+        if (webViewHost != null) {
+            WebView oldWv = webViewHost.getWebView();
+            if (oldWv != null) {
+                if (rootLayout != null) {
+                    rootLayout.removeView(oldWv);
+                }
+                try {
+                    oldWv.stopLoading();
+                    oldWv.setWebChromeClient(null);
+                    oldWv.setWebViewClient(null);
+                    oldWv.setDownloadListener(null);
+                    oldWv.destroy();
+                } catch (Exception e) {
+                    Log.w(TAG, "error destroying crashed webView", e);
+                }
+            }
+        }
+
+        webViewHost = new WebViewHost(this, themeManager, oauthManager, androidBridge, this);
+        webViewHost.setListener(this);
+        if (rootLayout != null) {
+            rootLayout.addView(webViewHost.getWebView(), 0, ViewParams.full());
+        }
+        if (CoreRuntimeState.serverUrl != null) {
+            appLoaded = true;
+            loadedGeneration = CoreRuntimeState.readyGeneration;
+            webViewHost.loadApp();
+        } else {
+            appLoaded = false;
+            loadedGeneration = -1;
+        }
+    }
+
     /** Idempotent; called by AndroidBridge.onUiReady() on the main thread. */
     public void dismissSplash() {
         Log.i(TAG, "dismissSplash: fading out splashView (280ms)");
@@ -281,9 +358,11 @@ public class MainActivity extends Activity
     protected void onDestroy() {
         activityResumed = false;
         sInForeground = false;
+        pendingHostResume = false;
         if (activeActivity == this) {
             activeActivity = null;
         }
+        handler.removeCallbacks(dispatchPendingHostResume);
         handler.removeCallbacks(notifyWebViewNetworkOnline);
         if (splash != null) {
             splash.destroy();
@@ -341,7 +420,12 @@ public class MainActivity extends Activity
     protected void onPause() {
         activityResumed = false;
         sInForeground = false;
+        pendingHostResume = false;
         handler.removeCallbacks(pollServer);
+        handler.removeCallbacks(dispatchPendingHostResume);
+        if (appLoaded && backgroundedAtMs == 0L) {
+            backgroundedAtMs = SystemClock.elapsedRealtime();
+        }
         if (webViewHost != null) {
             AppLifecycle.pause(webViewHost.getWebView());
         }
@@ -351,6 +435,12 @@ public class MainActivity extends Activity
     @Override
     protected void onStop() {
         sInForeground = false;
+        if (appLoaded) {
+            wasStopped = true;
+            if (backgroundedAtMs == 0L) {
+                backgroundedAtMs = SystemClock.elapsedRealtime();
+            }
+        }
         super.onStop();
     }
 
@@ -363,9 +453,29 @@ public class MainActivity extends Activity
         if (webViewHost != null) {
             AppLifecycle.resume(webViewHost.getWebView());
         }
+        if (appLoaded && backgroundedAtMs > 0L) {
+            long elapsedMs = Math.max(0L, SystemClock.elapsedRealtime() - backgroundedAtMs);
+            boolean stopped = wasStopped;
+            backgroundedAtMs = 0L;
+            wasStopped = false;
+            pendingResumeBackgroundMs = elapsedMs;
+            pendingResumeWasStopped = stopped;
+            pendingHostResume = true;
+            handler.removeCallbacks(dispatchPendingHostResume);
+            handler.postDelayed(dispatchPendingHostResume, HOST_RESUME_FALLBACK_DELAY_MS);
+        }
         refreshTheme();
         handler.removeCallbacks(pollServer);
         handler.post(pollServer);
+    }
+
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus && activityResumed && pendingHostResume) {
+            handler.removeCallbacks(dispatchPendingHostResume);
+            handler.post(dispatchPendingHostResume);
+        }
     }
 
     private void refreshTheme() {

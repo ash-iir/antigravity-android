@@ -2,6 +2,7 @@ package com.agy.ui.webview;
 
 import android.content.Context;
 import android.os.Build;
+import android.util.Log;
 import android.view.MotionEvent;
 import android.view.View;
 import android.webkit.WebView;
@@ -12,6 +13,8 @@ import com.agy.theme.ThemeManager;
 
 /** Creates and hardware-configures the host WebView. */
 public final class WebViewFactory {
+
+    private static final String TAG = "WebViewHost";
 
     private WebViewFactory() {
     }
@@ -44,6 +47,17 @@ public final class WebViewFactory {
         });
 
         WebSettingsFactory.configure(view);
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            try {
+                // Keep the WebView renderer at IMPORTANT priority even when the
+                // activity is backgrounded, matching CoreServerService's foreground
+                // lifetime so Android/OEMs do not freeze or kill active streams.
+                view.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false);
+            } catch (Throwable t) {
+                Log.w(TAG, "setRendererPriorityPolicy failed", t);
+            }
+        }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT && BuildConfig.DEBUG) {
             WebView.setWebContentsDebuggingEnabled(true);

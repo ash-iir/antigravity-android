@@ -155,7 +155,7 @@ web/
 
 - **Theme Engine:** `theme-bootstrap.js` sets initial colors synchronously before paint; `theme_sync.js` syncs dynamic theme changes via `MutationObserver`, `storage`, and `matchMedia`.
 - **Mobile & Touch (`web_optimizations.js`, `touch_model_menu.js`):** Eliminates 300 ms tap delay, keeps `--agy-vvh` synced with `visualViewport` during IME opening, and synthesizes pointer/keyboard events for hover-based model submenus.
-- **Core Transport (`bridge.core.js`):** Stubs `window.process`, rewrites ConnectRPC `/exa.*` fetches to `https://127.0.0.1:<enginePort>` with `x-codeium-csrf-token`, retries startup bursts (`fetchWithStartupRetry`), and triggers stream recovery on debounced `agy:network-online`.
+- **Core Transport (`bridge.core.js`):** Stubs `window.process`, rewrites ConnectRPC `/exa.*` fetches to `https://127.0.0.1:<enginePort>` with `x-codeium-csrf-token`, retries startup bursts (`fetchWithStartupRetry`), tracks long-lived server-streaming RPCs (e.g., `StreamAgentStateUpdates`) with an internal `AbortController` + pass-through `ReadableStream` handle, and actively force-resets stalled streams on `agy:host-resume` / `agy:network-online` / `visibilitychange` (deferred if hidden) without aborting the caller's signal so `main.js` reconnects and hydrates completed state.
 - **Workers & Audio:** Offloads PDF rendering (`pdf.worker.mjs`), Myers diff calculations (`diff_worker.js`), and 16 kHz microphone downsampling (`AudioWorkletProcessor`).
 
 ---
@@ -181,4 +181,4 @@ web/
 bash web/tests/selftest.sh
 ```
 
-Verifies isolated copy integrity, confirms upstream `web/main.js` SHA-256 stays unmodified, validates all generated bundles (`node --check`), and checks there are no double-wrapped IIFEs.
+Verifies isolated copy integrity, confirms upstream `web/main.js` SHA-256 stays unmodified, validates all generated bundles (`node --check`), checks there are no double-wrapped IIFEs, and runs a Node.js behavioral check confirming `agy:host-resume` resets stalled `StreamAgentStateUpdates` streams (deferring while hidden) without aborting caller signals or unary/audio RPCs.

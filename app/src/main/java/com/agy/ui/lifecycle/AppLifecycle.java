@@ -17,6 +17,10 @@ public final class AppLifecycle {
         WebViewLifecycle.resume(webView);
     }
 
+    public static void notifyHostResume(WebView webView, long backgroundMs, boolean wasStopped) {
+        WebViewLifecycle.notifyHostResume(webView, backgroundMs, wasStopped);
+    }
+
     public static void pause(WebView webView) {
         WebViewLifecycle.pause(webView);
     }

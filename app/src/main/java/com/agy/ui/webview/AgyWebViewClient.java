@@ -1,10 +1,13 @@
 package com.agy.ui.webview;
 
+import android.annotation.TargetApi;
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.net.Uri;
 import android.net.http.SslError;
+import android.os.Build;
 import android.util.Log;
+import android.webkit.RenderProcessGoneDetail;
 import android.webkit.SslErrorHandler;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
@@ -182,5 +185,18 @@ public final class AgyWebViewClient extends WebViewClient {
         if (listener != null) {
             listener.onPageFinished(url);
         }
+    }
+
+    @Override
+    @TargetApi(Build.VERSION_CODES.O)
+    public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {
+        boolean didCrash = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+                && detail != null && detail.didCrash();
+        Log.e(TAG, "WebView render process gone (didCrash=" + didCrash + ")");
+        if (listener != null) {
+            listener.onRenderProcessGone(didCrash);
+            return true;
+        }
+        return false;
     }
 }
