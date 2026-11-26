@@ -1,3 +1,23 @@
+# Antigravity for Android v2.34.16
+
+## Release Packages
+
+| Package | Application ID | Runtime Port | Description |
+| :--- | :--- | :--- | :--- |
+| **`antigravity.apk`** | `com.agy` | 45157 | Standard production release with original Google account checks. |
+| **`antigravity-region-bypass.apk`** | `com.agy` | 45157 | Region-bypass edition with account eligibility check bypass. |
+| **`SHA256SUMS.txt`** | — | — | Cryptographic SHA-256 checksums for verification. |
+
+## Changes & Fixes (v2.34.16)
+
+### 1. Local GitHub Plugin Discovery & Multi-Account PAT Support
+* **User Plugin Seeding (`~/.gemini/config/plugins/`):** Seed bundled local plugins (`GitHub (Local)`) into `~/.gemini/config/plugins/` (where `language_server` discovers user plugins and `auth.json` providers) so **Customizations → Installed → Plugins → GitHub (Local)** shows up with multi-account PAT support, while keeping `swarm` in `builtin/plugins/swarm`.
+
+### 2. Customizations & SPA Step-by-Step Back Navigation
+* **Renderer-Initiated History & Overlay Back Handling:** Fix Android Back navigation inside **Customizations** (and all SPA routes, modals, bottom sheets, and mobile sidebar) via renderer-initiated `window.history.back()` (`__TSR_index > 0`), ancestor z-index overlay handling, and clean Home `/` exit.
+
+---
+
 # Antigravity for Android v2.34.15
 
 ## Release Packages

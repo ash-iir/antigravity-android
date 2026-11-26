@@ -15,7 +15,7 @@ on:
       tag_name:
         description: 'Release Tag (e.g. v2.34.0)'
         required: false
-        default: 'v2.34.15'
+        default: 'v2.34.16'
       draft:
         description: 'Create Draft Release'
         type: boolean
@@ -151,13 +151,18 @@ jobs:
 
             ---
 
-            ### What's New in v2.34.15
+            ### What's New in v2.34.16
+
+            * **Local GitHub Plugin Discovery (`~/.gemini/config/plugins/`):** Seeded bundled local plugins (`GitHub (Local)`) into `~/.gemini/config/plugins/` (where `language_server` discovers user plugins and `auth.json` providers) so **Customizations → Installed → Plugins → GitHub (Local)** appears with multi-account PAT support, while keeping `swarm` in `builtin/plugins/swarm`.
+            * **Customizations & SPA Step-by-Step Back Navigation:** Fixed Android Back navigation inside **Customizations** (and all SPA routes, modals, bottom sheets, and mobile sidebar) via renderer-initiated `window.history.back()` (`__TSR_index > 0`), ancestor z-index overlay handling, and clean Home `/` exit.
+
+            ### Previous Release Highlights (v2.34.15)
 
             * **Plugin OAuth `redirect_uri_mismatch` Fix:** Fixed Gmail / Google Workspace & MCP plugin OAuth `Error 400: redirect_uri_mismatch` by forcing local `REDIRECT` mode on localhost.
             * **Step-by-Step Settings Back Navigation:** Fixed Android Back button in Settings to step back one screen at a time instead of closing Settings.
             * **Built-in Multi-Account GitHub Plugin (`plugins/github/`):** Added a bundled local GitHub plugin under Customizations → Plugins supporting Add account with labels, PAT auth, and `GH_TOKEN`/`GITHUB_TOKEN` env delivery.
 
-            ### Previous Release Highlights (v2.34.14)
+            ### Earlier Highlights (v2.34.14)
 
             * **Swarm Plugin & Node.js Reliability:** Added dynamic `node` shell bridge resolution, `nodejs-lts` auto-seeding in `env/seed-packages.txt`, `pkg` fallback wrapper overwrite on install, and post-startup builtin plugin sync so Swarm sidecars start cleanly out of the box.
             * **Background-Resume Stuck UI Fix:** Kept WebView and SSE streams alive when backgrounded and added host-resume stalled state stream force-reset across `MainActivity`, `WebViewLifecycle`, and `bridge.core.js`, preventing frozen UI after switching apps.
@@ -178,4 +183,4 @@ jobs:
             ---
 
             > [!NOTE]
-            > **Seamless Upgrades:** Built with the consistent embedded signing keystore (`APP_VERSION_CODE=23415`). You can install this update directly over previous v2.x releases without uninstalling or losing local projects.
+            > **Seamless Upgrades:** Built with the consistent embedded signing keystore (`APP_VERSION_CODE=23416`). You can install this update directly over previous v2.x releases without uninstalling or losing local projects.
