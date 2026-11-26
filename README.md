@@ -9,6 +9,7 @@
   [![Android](https://img.shields.io/badge/Android-7.0%2B-3DDC84?style=flat-square&logo=android&logoColor=white)](https://android.com)
   [![Arch](https://img.shields.io/badge/ARM64-v8.0--A%2B-blue?style=flat-square)](https://arm.com)
   [![Release](https://img.shields.io/badge/Version-2.34.15-blueviolet?style=flat-square)](https://github.com/salmanbappi/antigravity-android/releases)
+  [![Discord](https://img.shields.io/badge/Discord-Community-5865F2?style=flat-square&logo=discord&logoColor=white)](https://discord.gg/r4XTBuWpvA)
   [![License](https://img.shields.io/badge/License-Apache_2.0-orange?style=flat-square)](LICENSE)
 
   <br/>
@@ -123,5 +124,5 @@ antigravity/
 ---
 
 <div align="center">
-  <sub>Licensed under the <a href="LICENSE">Apache 2.0 License</a></sub>
+  <sub>Join our <a href="https://discord.gg/r4XTBuWpvA">Discord Community</a> &bull; Licensed under the <a href="LICENSE">Apache 2.0 License</a></sub>
 </div>
