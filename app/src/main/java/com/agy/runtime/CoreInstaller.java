@@ -68,16 +68,7 @@ public final class CoreInstaller {
         rm.startNetworkMonitor();
         OnboardingSeeder.seed(ctx, rm.getAppDataDir(), rm.getProjectsDir());
         // Ensure builtin plugins (like Swarm) are extracted/synced into the app's builtin plugins dir
-        try {
-            File pluginsDir = new File(rm.getAppDataDir(), "builtin/plugins");
-            String[] pluginAssets = ctx.getAssets().list("plugins");
-            if (pluginAssets != null && pluginAssets.length > 0) {
-                AssetUnpacker.copyTree(ctx.getAssets(), "plugins", pluginsDir);
-                Log.i(TAG, "synced builtin plugins into " + pluginsDir);
-            }
-        } catch (Exception e) {
-            Log.w(TAG, "cannot sync builtin plugins: " + e.getMessage());
-        }
+        syncBuiltinPlugins(rm);
         // Always ensure fallback shells and open-url shims are installed
         // in runtime/bin immediately regardless of whether the bionic prefix is extracted.
         ShellBridgeInstaller.installFallbackBridges(rm.getBinDir(), ctx);
@@ -92,6 +83,25 @@ public final class CoreInstaller {
             }
             com.agy.install.TermuxPrefixRewriter.patchElfBinaries(prefix, prefix.getAbsolutePath());
             ShellBridgeInstaller.install(rm);
+        }
+    }
+
+    /**
+     * Syncs Android-patched builtin plugins (e.g. Swarm) from {@code assets/plugins}
+     * into {@code <appDataDir>/builtin/plugins}. Safe to call repeatedly (e.g. after
+     * {@code language_server} unpacks its own {@code builtin/.checksum} on first launch).
+     */
+    public static void syncBuiltinPlugins(RuntimeManager rm) {
+        Context ctx = rm.appContext();
+        try {
+            File pluginsDir = new File(rm.getAppDataDir(), "builtin/plugins");
+            String[] pluginAssets = ctx.getAssets().list("plugins");
+            if (pluginAssets != null && pluginAssets.length > 0) {
+                AssetUnpacker.copyTree(ctx.getAssets(), "plugins", pluginsDir);
+                Log.i(TAG, "synced builtin plugins into " + pluginsDir);
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "cannot sync builtin plugins: " + e.getMessage());
         }
     }
 
