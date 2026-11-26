@@ -1,3 +1,23 @@
+# Antigravity for Android v2.34.14
+
+## Release Packages
+
+| Package | Application ID | Runtime Port | Description |
+| :--- | :--- | :--- | :--- |
+| **`antigravity.apk`** | `com.agy` | 45157 | Standard production release with original Google account checks. |
+| **`antigravity-region-bypass.apk`** | `com.agy` | 45157 | Region-bypass edition with account eligibility check bypass. |
+| **`SHA256SUMS.txt`** | — | — | Cryptographic SHA-256 checksums for verification. |
+
+## Changes & Fixes (v2.34.14)
+
+### 1. Swarm Plugin & Node.js Runtime Reliability
+* **Dynamic `node` Bridge & Auto-Seed:** Added `nodejs-lts` to `env/seed-packages.txt`, upgraded `ShellBridgeInstaller` to resolve `$PREFIX/bin/node` dynamically, ensured `pkg` overwrites stale fallback wrappers on install, and triggered post-startup builtin plugin sync so Swarm sidecars launch reliably without manual setup.
+
+### 2. Background-Resume Stuck UI Fix
+* **Stream Continuity & Host Resume Recovery:** Kept WebView/SSE connections alive across app backgrounding and added host-resume stalled state stream force-reset in `bridge.core.js` / `MainActivity` / `WebViewLifecycle`, eliminating frozen or stuck chat/agent UI when returning to the app.
+
+---
+
 # Antigravity for Android v2.34.13
 
 ## Release Packages
