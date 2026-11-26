@@ -10,7 +10,7 @@ description: >-
 # GitHub (Multi-Account Plugin)
 
 Use connected local GitHub Personal Access Tokens (PATs) managed in
-**Settings → Customizations → Plugins → GitHub** to run `gh` and `git` commands
+**Customizations → Installed → Plugins → GitHub (Local)** to run `gh` and `git` commands
 without storing plaintext tokens in scripts or asking the user to paste secrets
 into chat.
 
@@ -23,7 +23,7 @@ Always call `list_plugin_accounts` before running GitHub commands so you know:
    `personal` or `work`).
 
 If no `github` account is connected, ask the user to open
-**Settings → Customizations → Plugins → GitHub** and add a Personal Access
+**Customizations → Installed → Plugins → GitHub (Local)** and add a Personal Access
 Token. Do not ask the user to paste their token into chat.
 
 ## Selecting an Account (`AGY_ACCOUNT`)

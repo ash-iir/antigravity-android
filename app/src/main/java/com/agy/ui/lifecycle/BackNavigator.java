@@ -6,13 +6,17 @@ import android.webkit.ValueCallback;
 import android.webkit.WebView;
 
 /**
- * Back handling: let the web UI step back inside open overlays (e.g. Settings
- * sub-views) before walking WebView history or finishing the activity.
+ * Back handling: let the web UI step back inside open overlays, dismiss
+ * non-URL-backed dialogs/sheets, or step back one SPA router entry via
+ * {@code window.history.back()} before falling back to WebView history or
+ * finishing the activity.
  */
 public final class BackNavigator {
 
     private static final String JS_HANDLE_BACK =
-            "(typeof window.__agHandleBack==='function'&&window.__agHandleBack())?'1':'0'";
+            "(function(){if(typeof window.__agHandleBack!=='function')return '0';"
+                    + "var r=window.__agHandleBack();"
+                    + "return r==='exit'?'2':(r?'1':'0');})()";
 
     private BackNavigator() {
     }
@@ -31,8 +35,12 @@ public final class BackNavigator {
     }
 
     /**
-     * Dispatches Back to {@code window.__agHandleBack()}; if not consumed,
-     * walks WebView history or invokes {@code fallback}.
+     * Dispatches Back to {@code window.__agHandleBack()}:
+     * <ul>
+     *   <li>{@code "1"}: consumed by JS (overlay back/close/escape or SPA history step-back).</li>
+     *   <li>{@code "2"}: clean Home root — invoke {@code fallback} directly (skipping {@code webView.goBack()}).</li>
+     *   <li>{@code "0"} (or error): walk WebView history if possible, else invoke {@code fallback}.</li>
+     * </ul>
      */
     public static void handle(final Activity activity, final WebView webView, final Runnable fallback) {
         if (!isActivityAlive(activity)) {
@@ -52,6 +60,12 @@ public final class BackNavigator {
                         return;
                     }
                     if (!isActivityAlive(activity)) {
+                        return;
+                    }
+                    if ("\"2\"".equals(value)) {
+                        if (fallback != null) {
+                            fallback.run();
+                        }
                         return;
                     }
                     if (webView.canGoBack()) {

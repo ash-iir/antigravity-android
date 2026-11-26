@@ -194,8 +194,8 @@ run().catch((err) => {
 });
 EOF
 
-    # Behavioral test: __agHandleBack() steps back inside topmost overlay,
-    # clicks deepest visible non-inert Back button, and returns false at root.
+    # Behavioral test: __agHandleBack() handles ancestor z-index overlays, Back/Close/Escape,
+    # in-layout controls, SPA window.history.back() (__TSR_index > 0), breadcrumbs, and Home exit.
     node - "$TMP/web/generated/patches/back_navigation.js" <<'EOF'
 const fs = require('fs');
 const vm = require('vm');
@@ -209,11 +209,14 @@ function makeNode(opts) {
     tagName: (opts.tagName || 'DIV').toUpperCase(),
     className: opts.className || '',
     disabled: Boolean(opts.disabled),
+    tabIndex: typeof opts.tabIndex === 'number' ? opts.tabIndex : -1,
     style: Object.assign({ display: 'block', visibility: 'visible', zIndex: 'auto' }, opts.style || {}),
     rect: opts.rect || { width: 100, height: 40 },
     parent: null,
+    parentElement: null,
     children: [],
     clicks: 0,
+    events: [],
     getAttribute(name) {
       return Object.prototype.hasOwnProperty.call(attrs, name) ? attrs[name] : null;
     },
@@ -226,6 +229,10 @@ function makeNode(opts) {
     click() {
       this.clicks += 1;
     },
+    dispatchEvent(ev) {
+      this.events.push(ev);
+      return true;
+    },
     matches(sel) {
       const parts = sel.split(',').map((s) => s.trim()).filter(Boolean);
       return parts.some((p) => matchSimple(this, p));
@@ -237,6 +244,10 @@ function makeNode(opts) {
         cur = cur.parent;
       }
       return null;
+    },
+    querySelector(sel) {
+      const all = this.querySelectorAll(sel);
+      return all.length > 0 ? all[0] : null;
     },
     querySelectorAll(sel) {
       const out = [];
@@ -252,9 +263,18 @@ function makeNode(opts) {
     append(...kids) {
       for (const k of kids) {
         k.parent = this;
+        k.parentElement = this;
         this.children.push(k);
       }
       return this;
+    },
+    removeChild(kid) {
+      const idx = this.children.indexOf(kid);
+      if (idx >= 0) {
+        this.children.splice(idx, 1);
+        kid.parent = null;
+        kid.parentElement = null;
+      }
     }
   };
   return node;
@@ -263,6 +283,7 @@ function makeNode(opts) {
 function matchSimple(el, sel) {
   if (sel === '[inert]') return el.hasAttribute('inert');
   if (sel === '[aria-hidden="true"]') return el.getAttribute('aria-hidden') === 'true';
+  if (sel === '[data-closed]') return el.hasAttribute('data-closed');
   if (sel === '[data-bottom-sheet-popup]:not([data-closed])') {
     return el.hasAttribute('data-bottom-sheet-popup') && !el.hasAttribute('data-closed');
   }
@@ -270,102 +291,326 @@ function matchSimple(el, sel) {
     return el.className.split(/\s+/).includes('settings-modal-container') &&
       el.getAttribute('aria-hidden') !== 'true';
   }
-  if (sel === '[role="dialog"]') {
-    return el.getAttribute('role') === 'dialog';
+  if (sel === '[role="dialog"]:not([data-closed])') {
+    return el.getAttribute('role') === 'dialog' && !el.hasAttribute('data-closed');
+  }
+  if (sel === '[role="alertdialog"]:not([data-closed])') {
+    return el.getAttribute('role') === 'alertdialog' && !el.hasAttribute('data-closed');
+  }
+  if (sel === '[role="menu"][data-open]') {
+    return el.getAttribute('role') === 'menu' && el.hasAttribute('data-open');
+  }
+  if (sel === '[role="listbox"][data-open]') {
+    return el.getAttribute('role') === 'listbox' && el.hasAttribute('data-open');
   }
   if (sel === 'button[aria-label="Back"]:not([disabled])') {
     return el.tagName === 'BUTTON' &&
       el.getAttribute('aria-label') === 'Back' &&
       !el.disabled && !el.hasAttribute('disabled');
   }
+  if (sel === 'button[aria-label="Close"]:not([disabled])') {
+    return el.tagName === 'BUTTON' &&
+      el.getAttribute('aria-label') === 'Close' &&
+      !el.disabled && !el.hasAttribute('disabled');
+  }
+  if (sel === 'button[aria-label="Close Logs Modal"]:not([disabled])') {
+    return el.tagName === 'BUTTON' &&
+      el.getAttribute('aria-label') === 'Close Logs Modal' &&
+      !el.disabled && !el.hasAttribute('disabled');
+  }
+  if (sel === 'button[aria-label="Close Sidebar"]:not([disabled])') {
+    return el.tagName === 'BUTTON' &&
+      el.getAttribute('aria-label') === 'Close Sidebar' &&
+      !el.disabled && !el.hasAttribute('disabled');
+  }
+  if (sel === 'button[data-testid="onboarding-back"][aria-label="Back"]:not([disabled])') {
+    return el.tagName === 'BUTTON' &&
+      el.getAttribute('data-testid') === 'onboarding-back' &&
+      el.getAttribute('aria-label') === 'Back' &&
+      !el.disabled && !el.hasAttribute('disabled');
+  }
+  if (sel === 'nav[aria-label="Breadcrumb"]') {
+    return el.tagName === 'NAV' && el.getAttribute('aria-label') === 'Breadcrumb';
+  }
+  if (sel === '[data-testid="breadcrumb-segment"]') {
+    return el.getAttribute('data-testid') === 'breadcrumb-segment';
+  }
+  if (sel === 'button[data-testid="mobile-back-to-home"]:not([disabled])') {
+    return el.tagName === 'BUTTON' &&
+      el.getAttribute('data-testid') === 'mobile-back-to-home' &&
+      !el.disabled && !el.hasAttribute('disabled');
+  }
+  if (sel === '[data-testid^="settings-nav-item-"]') {
+    const id = el.getAttribute('data-testid') || '';
+    return id.startsWith('settings-nav-item-');
+  }
+  if (sel === '[data-testid="settings-disabled-notice"]') {
+    return el.getAttribute('data-testid') === 'settings-disabled-notice';
+  }
   return false;
 }
 
-const docRoot = makeNode({ tagName: 'BODY' });
-const sandbox = {
-  console,
-  document: {
-    querySelectorAll: (sel) => docRoot.querySelectorAll(sel)
-  },
-  getComputedStyle: (el) => el.style
-};
-sandbox.window = sandbox;
-sandbox.self = sandbox;
-sandbox.globalThis = sandbox;
+function createEnv(init) {
+  const docRoot = makeNode({ tagName: 'BODY' });
+  let historyBacks = 0;
+  const loc = Object.assign({ pathname: '/', search: '' }, (init && init.location) || {});
+  const hist = {
+    state: (init && init.historyState !== undefined) ? init.historyState : { __TSR_index: 0 },
+    back() {
+      historyBacks += 1;
+    }
+  };
+  const sandbox = {
+    console,
+    URLSearchParams,
+    location: loc,
+    history: hist,
+    document: {
+      querySelector: (sel) => docRoot.querySelector(sel),
+      querySelectorAll: (sel) => docRoot.querySelectorAll(sel),
+      dispatchEvent: (ev) => docRoot.dispatchEvent(ev)
+    },
+    getComputedStyle: (el) => el.style
+  };
+  sandbox.window = sandbox;
+  sandbox.self = sandbox;
+  sandbox.globalThis = sandbox;
+  vm.runInNewContext(code, sandbox);
+  return {
+    sandbox,
+    docRoot,
+    location: loc,
+    history: hist,
+    getHistoryBacks: () => historyBacks
+  };
+}
 
-vm.runInNewContext(code, sandbox);
-assert.strictEqual(typeof sandbox.__agHandleBack, 'function', '__agHandleBack must be exposed');
+// 1. Clean Home ('/') with no overlay -> 'exit' (even if __TSR_index > 0 after mobile-back-to-home).
+{
+  const env = createEnv({ location: { pathname: '/', search: '?hostTheme=dark' }, historyState: { __TSR_index: 3 } });
+  assert.strictEqual(typeof env.sandbox.__agHandleBack, 'function', '__agHandleBack must be exposed');
+  assert.strictEqual(env.sandbox.__agHandleBack(), 'exit', 'clean Home should signal exit');
+  assert.strictEqual(env.getHistoryBacks(), 0, 'clean Home must not call history.back()');
+}
 
-// 1. No overlay open -> false.
-assert.strictEqual(sandbox.__agHandleBack(), false, 'no overlay should return false');
+// 2. Settings desktop root (depth 0, no Back button):
+//    - without router history -> false;
+//    - with ?settingsOpen=true & __TSR_index > 0 -> pops via history.back() and returns true.
+{
+  const env = createEnv({ location: { pathname: '/', search: '?settingsOpen=true' }, historyState: { __TSR_index: 0 } });
+  const settingsModal = makeNode({ className: 'settings-modal-container', style: { zIndex: '50' } });
+  const settingsClose = makeNode({ tagName: 'BUTTON', attrs: { 'aria-label': 'Close' } });
+  settingsModal.append(settingsClose);
+  env.docRoot.append(settingsModal);
 
-// 2. Settings root (depth 0, no Back button) -> false.
-const settingsModal = makeNode({
-  className: 'settings-modal-container',
-  style: { zIndex: '50' }
-});
-docRoot.append(settingsModal);
-assert.strictEqual(sandbox.__agHandleBack(), false, 'settings root without Back button should return false');
+  assert.strictEqual(env.sandbox.__agHandleBack(), false, 'settings root at __TSR_index=0 should return false');
+  assert.strictEqual(settingsClose.clicks, 0, 'settings root must not click replace:true Close');
 
-// 3. Nested Back buttons + inert panel + hidden button:
-//    - btnOuter (visible, active)
-//    - btnNested (visible, active, deepest in DOM -> must be clicked)
-//    - btnInert (inside [inert] panel later in DOM -> must be skipped)
-//    - btnHidden (display:none later in DOM -> must be skipped)
-const outerPanel = makeNode({});
-const btnOuter = makeNode({ tagName: 'BUTTON', attrs: { 'aria-label': 'Back' } });
-outerPanel.append(btnOuter);
+  env.history.state = { __TSR_index: 1 };
+  assert.strictEqual(env.sandbox.__agHandleBack(), true, 'settings root at __TSR_index>0 should pop history');
+  assert.strictEqual(env.getHistoryBacks(), 1, 'settings root should call window.history.back()');
+  assert.strictEqual(settingsClose.clicks, 0, 'settings root must not click Close when popping history');
+}
 
-const nestedPanel = makeNode({});
-const btnNested = makeNode({ tagName: 'BUTTON', attrs: { 'aria-label': 'Back' } });
-nestedPanel.append(btnNested);
+// 3. Nested Back buttons + inert panel + hidden button inside Settings:
+//    clicks deepest active Back button, skips inert & display:none.
+{
+  const env = createEnv({ location: { pathname: '/', search: '?settingsOpen=true' }, historyState: { __TSR_index: 1 } });
+  const sheetWrap = makeNode({ style: { zIndex: '4001' } });
+  const settingsSheet = makeNode({
+    attrs: { 'data-bottom-sheet-popup': '', 'data-sheet-depth': '0' }
+  });
+  const navMarker = makeNode({ attrs: { 'data-testid': 'settings-nav-item-General' } });
+  const outerPanel = makeNode({});
+  const btnOuter = makeNode({ tagName: 'BUTTON', attrs: { 'aria-label': 'Back' } });
+  outerPanel.append(btnOuter);
+  const nestedPanel = makeNode({});
+  const btnNested = makeNode({ tagName: 'BUTTON', attrs: { 'aria-label': 'Back' } });
+  nestedPanel.append(btnNested);
+  const inertPanel = makeNode({ attrs: { inert: '' } });
+  const btnInert = makeNode({ tagName: 'BUTTON', attrs: { 'aria-label': 'Back' } });
+  inertPanel.append(btnInert);
+  const hiddenPanel = makeNode({});
+  const btnHidden = makeNode({
+    tagName: 'BUTTON',
+    attrs: { 'aria-label': 'Back' },
+    style: { display: 'none' }
+  });
+  hiddenPanel.append(btnHidden);
+  settingsSheet.append(navMarker, outerPanel, nestedPanel, inertPanel, hiddenPanel);
+  sheetWrap.append(settingsSheet);
+  env.docRoot.append(sheetWrap);
 
-const inertPanel = makeNode({ attrs: { inert: '' } });
-const btnInert = makeNode({ tagName: 'BUTTON', attrs: { 'aria-label': 'Back' } });
-inertPanel.append(btnInert);
+  assert.strictEqual(env.sandbox.__agHandleBack(), true, 'nested visible Back button should be handled');
+  assert.strictEqual(btnNested.clicks, 1, 'deepest active Back button should be clicked');
+  assert.strictEqual(btnOuter.clicks, 0, 'outer Back button should not be clicked first');
+  assert.strictEqual(btnInert.clicks, 0, 'inert panel Back button must be skipped');
+  assert.strictEqual(btnHidden.clicks, 0, 'hidden Back button must be skipped');
 
-const hiddenPanel = makeNode({});
-const btnHidden = makeNode({
-  tagName: 'BUTTON',
-  attrs: { 'aria-label': 'Back' },
-  style: { display: 'none' }
-});
-hiddenPanel.append(btnHidden);
+  // 4. Ancestor z-index stacking: <HI> dialog (wrapper zIndex: 5000, popup zIndex: auto)
+  //    opened over Settings bottom sheet (wrapper zIndex: 4001, popup zIndex: auto)
+  //    must win and click dialog's Close button without touching Settings Back or history.
+  const modalWrap = makeNode({ style: { zIndex: '5000' } });
+  const hiDialog = makeNode({ attrs: { role: 'dialog' } });
+  const inertBackWrap = makeNode({ attrs: { inert: '' } });
+  const inertDialogBack = makeNode({ tagName: 'BUTTON', attrs: { 'aria-label': 'Back' } });
+  inertBackWrap.append(inertDialogBack);
+  const hiClose = makeNode({ tagName: 'BUTTON', attrs: { 'aria-label': 'Close' } });
+  hiDialog.append(inertBackWrap, hiClose);
+  modalWrap.append(hiDialog);
+  // Prepend before sheetWrap to prove ancestor z-index (5000 > 4001) beats DOM order!
+  env.docRoot.children.unshift(modalWrap);
+  modalWrap.parent = env.docRoot;
+  modalWrap.parentElement = env.docRoot;
 
-settingsModal.append(outerPanel, nestedPanel, inertPanel, hiddenPanel);
+  assert.strictEqual(env.sandbox.__agHandleBack(), true, 'higher ancestor z-index dialog should be handled');
+  assert.strictEqual(hiClose.clicks, 1, 'dialog Close button should be clicked');
+  assert.strictEqual(inertDialogBack.clicks, 0, 'inert dialog Back button must be skipped');
+  assert.strictEqual(btnNested.clicks, 1, 'lower Settings Back button must not be clicked');
+  assert.strictEqual(env.getHistoryBacks(), 0, 'closing dialog must not pop history');
+}
 
-assert.strictEqual(sandbox.__agHandleBack(), true, 'nested visible Back button should be handled');
-assert.strictEqual(btnNested.clicks, 1, 'deepest active Back button should be clicked');
-assert.strictEqual(btnOuter.clicks, 0, 'outer Back button should not be clicked first');
-assert.strictEqual(btnInert.clicks, 0, 'inert panel Back button must be skipped');
-assert.strictEqual(btnHidden.clicks, 0, 'hidden Back button must be skipped');
+// 5. Customizations in-page modals (J5 skill detail / ybd Add MCP) close via Close without popping route.
+{
+  const env = createEnv({
+    location: { pathname: '/customizations/installed', search: '' },
+    historyState: { __TSR_index: 2 }
+  });
+  const modalWrap = makeNode({ style: { zIndex: '5000' } });
+  const skillModal = makeNode({ attrs: { role: 'dialog' } });
+  const closeBtn = makeNode({ tagName: 'BUTTON', attrs: { 'aria-label': 'Close' } });
+  skillModal.append(closeBtn);
+  modalWrap.append(skillModal);
+  env.docRoot.append(modalWrap);
 
-// 4. Higher z-index bottom sheet on top takes precedence over settings modal.
-const topSheet = makeNode({
-  attrs: { 'data-bottom-sheet-popup': '' },
-  style: { zIndex: '100' }
-});
-const sheetBack = makeNode({ tagName: 'BUTTON', attrs: { 'aria-label': 'Back' } });
-topSheet.append(sheetBack);
-docRoot.append(topSheet);
+  assert.strictEqual(env.sandbox.__agHandleBack(), true, 'Customizations modal should close on Back');
+  assert.strictEqual(closeBtn.clicks, 1, 'Customizations modal Close button should be clicked');
+  assert.strictEqual(env.getHistoryBacks(), 0, 'closing modal must not navigate back');
+}
 
-assert.strictEqual(sandbox.__agHandleBack(), true, 'topmost overlay Back button should be handled');
-assert.strictEqual(sheetBack.clicks, 1, 'higher z-index overlay Back button should be clicked');
-assert.strictEqual(btnNested.clicks, 1, 'lower overlay Back button should not be clicked');
+// 6. Non-Settings bottom sheet (e.g. Mobile Side Panel Sod, which ALSO has role="dialog"
+//    from Base UI Lvb, plus an inner tab Close button) must dismiss via Escape, NOT click
+//    the inner tab Close button or pop history (even when ?feedbackOpen=true is present).
+{
+  const env = createEnv({
+    location: { pathname: '/c/conv-1', search: '?feedbackOpen=true' },
+    historyState: { __TSR_index: 2 }
+  });
+  const wrap = makeNode({ style: { zIndex: '6001' } });
+  const sidePanelSheet = makeNode({
+    attrs: { 'data-bottom-sheet-popup': '', 'data-sheet-depth': '0', role: 'dialog' }
+  });
+  const innerTabClose = makeNode({ tagName: 'BUTTON', attrs: { 'aria-label': 'Close' } });
+  sidePanelSheet.append(innerTabClose);
+  wrap.append(sidePanelSheet);
+  env.docRoot.append(wrap);
 
-// 5. Only inert Back button in topmost overlay -> returns false.
-const inertOnlyDialog = makeNode({
-  attrs: { role: 'dialog' },
-  style: { zIndex: '200' }
-});
-const inertWrap = makeNode({ attrs: { inert: '' } });
-const btnOnlyInert = makeNode({ tagName: 'BUTTON', attrs: { 'aria-label': 'Back' } });
-inertWrap.append(btnOnlyInert);
-inertOnlyDialog.append(inertWrap);
-docRoot.append(inertOnlyDialog);
+  assert.strictEqual(env.sandbox.__agHandleBack(), true, 'Mobile Side Panel sheet should be dismissed');
+  assert.strictEqual(innerTabClose.clicks, 0, 'inner tab Close button must NOT be clicked');
+  assert.strictEqual(sidePanelSheet.events.length, 1, 'Escape event must be dispatched on sheet');
+  assert.strictEqual(sidePanelSheet.events[0].key, 'Escape', 'dispatched key must be Escape');
+  assert.strictEqual(env.getHistoryBacks(), 0, 'dismissing bottom sheet must not pop Feedback/history');
+}
 
-assert.strictEqual(sandbox.__agHandleBack(), false, 'overlay with only inert Back button should return false');
-assert.strictEqual(btnOnlyInert.clicks, 0, 'inert Back button must not be clicked');
+// 7. Open [role="menu"][data-open] dismisses via Escape without popping route.
+{
+  const env = createEnv({
+    location: { pathname: '/customizations', search: '' },
+    historyState: { __TSR_index: 1 }
+  });
+  const menu = makeNode({ attrs: { role: 'menu', 'data-open': '' }, style: { zIndex: '50' } });
+  env.docRoot.append(menu);
+
+  assert.strictEqual(env.sandbox.__agHandleBack(), true, 'open menu should dismiss on Back');
+  assert.strictEqual(menu.events.length, 1, 'Escape event must be dispatched on menu');
+  assert.strictEqual(menu.events[0].key, 'Escape');
+  assert.strictEqual(env.getHistoryBacks(), 0);
+}
+
+// 8. Mobile overlay sidebar (<div role="dialog" aria-modal="true">) clicks Close Sidebar
+//    even when an unrelated inner Close button precedes it; Onboarding Back works in-layout.
+{
+  const env = createEnv({
+    location: { pathname: '/customizations', search: '' },
+    historyState: { __TSR_index: 1 }
+  });
+  const sidebarDialog = makeNode({
+    attrs: { role: 'dialog', 'aria-modal': 'true', 'aria-hidden': 'false' },
+    style: { zIndex: '50' }
+  });
+  const innerClose = makeNode({ tagName: 'BUTTON', attrs: { 'aria-label': 'Close' } });
+  const closeSidebar = makeNode({ tagName: 'BUTTON', attrs: { 'aria-label': 'Close Sidebar' } });
+  sidebarDialog.append(innerClose, closeSidebar);
+  env.docRoot.append(sidebarDialog);
+
+  assert.strictEqual(env.sandbox.__agHandleBack(), true, 'Close Sidebar dialog should be handled');
+  assert.strictEqual(closeSidebar.clicks, 1, 'Close Sidebar must be clicked');
+  assert.strictEqual(innerClose.clicks, 0, 'unrelated inner Close button must NOT be clicked');
+  assert.strictEqual(env.getHistoryBacks(), 0);
+
+  env.docRoot.removeChild(sidebarDialog);
+  const onboardingBack = makeNode({
+    tagName: 'BUTTON',
+    attrs: { 'data-testid': 'onboarding-back', 'aria-label': 'Back' }
+  });
+  env.docRoot.append(onboardingBack);
+  assert.strictEqual(env.sandbox.__agHandleBack(), true, 'onboarding-back should be handled');
+  assert.strictEqual(onboardingBack.clicks, 1);
+}
+
+// 9. Multi-step Customizations route (__TSR_index === 2 on /customizations/plugins/github)
+//    steps back 1 entry via window.history.back() instead of falling back to webView.goBack().
+{
+  const env = createEnv({
+    location: { pathname: '/customizations/plugins/github', search: '' },
+    historyState: { __TSR_index: 2 }
+  });
+  assert.strictEqual(env.sandbox.__agHandleBack(), true, 'Customizations detail with __TSR_index>0 must step back');
+  assert.strictEqual(env.getHistoryBacks(), 1, 'must call window.history.back() once');
+}
+
+// 10. Deep-link / __TSR_index === 0 on /customizations/plugins/github uses parent breadcrumb
+//     segment (never clicking leaf segment).
+{
+  const env = createEnv({
+    location: { pathname: '/customizations/plugins/github', search: '' },
+    historyState: { __TSR_index: 0 }
+  });
+  const nav = makeNode({ tagName: 'NAV', attrs: { 'aria-label': 'Breadcrumb' } });
+  const parentSeg = makeNode({
+    tagName: 'SPAN',
+    attrs: { 'data-testid': 'breadcrumb-segment', role: 'button' },
+    tabIndex: 0
+  });
+  const leafSeg = makeNode({
+    tagName: 'SPAN',
+    attrs: { 'data-testid': 'breadcrumb-segment', role: 'button' },
+    tabIndex: 0
+  });
+  nav.append(parentSeg, leafSeg);
+  env.docRoot.append(nav);
+
+  assert.strictEqual(env.sandbox.__agHandleBack(), true, 'parent breadcrumb fallback should handle Back');
+  assert.strictEqual(parentSeg.clicks, 1, 'parent breadcrumb segment should be clicked');
+  assert.strictEqual(leafSeg.clicks, 0, 'leaf breadcrumb segment must never be clicked');
+  assert.strictEqual(env.getHistoryBacks(), 0);
+}
+
+// 11. Deep-link / __TSR_index === 0 on /customizations (no breadcrumb) clicks mobile-back-to-home.
+{
+  const env = createEnv({
+    location: { pathname: '/customizations', search: '' },
+    historyState: { __TSR_index: 0 }
+  });
+  const homeBack = makeNode({
+    tagName: 'BUTTON',
+    attrs: { 'data-testid': 'mobile-back-to-home', 'aria-label': 'Back to home' }
+  });
+  env.docRoot.append(homeBack);
+
+  assert.strictEqual(env.sandbox.__agHandleBack(), true, 'mobile-back-to-home fallback should handle Back');
+  assert.strictEqual(homeBack.clicks, 1);
+}
 EOF
 fi
 

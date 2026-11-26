@@ -1,13 +1,14 @@
-# GitHub Plugin
+# GitHub (Local) Plugin
 
-Built-in local multi-account GitHub plugin for Antigravity.
+Bundled local multi-account GitHub plugin for Antigravity (seeded into
+`~/.gemini/config/plugins/github/`).
 
 ## Features
 
 - **Multi-account local auth:** Connect as many GitHub accounts as you need in
-  **Settings → Customizations → Plugins → GitHub** using Personal Access Tokens
-  (PATs). No OAuth client secret or cloud storage is required—credentials remain
-  local on the device.
+  **Customizations → Installed → Plugins → GitHub (Local)** using Personal
+  Access Tokens (PATs). No OAuth client secret or cloud storage is
+  required—credentials remain local on the device.
 - **Account labels & defaults:** Label each account (for example `personal`,
   `work`, `oss`), choose a default account, and let agents target specific
   accounts with `AGY_ACCOUNT=<account>`.
@@ -19,8 +20,8 @@ Built-in local multi-account GitHub plugin for Antigravity.
 
 ## Files
 
-- `plugin.json` — Plugin manifest (`github`, display name `GitHub`, icon,
-  starter prompts).
+- `plugin.json` — Plugin manifest (`github`, display name `GitHub (Local)`,
+  icon, starter prompts).
 - `auth.json` — `api_key` auth provider with `env` delivery (`GH_TOKEN`,
   `GITHUB_TOKEN`), Bearer header config, and GitHub `/user` identity probe.
 - `assets/logo.svg` — GitHub Octocat icon.

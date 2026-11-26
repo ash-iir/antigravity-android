@@ -1,6 +1,6 @@
 {
   "name": "github",
-  "displayName": "GitHub",
+  "displayName": "GitHub (Local)",
   "version": "1.0.0",
   "description": "Connect one or more local GitHub accounts to manage repositories, pull requests, issues, and workflows.",
   "logo": "assets/logo.svg",
