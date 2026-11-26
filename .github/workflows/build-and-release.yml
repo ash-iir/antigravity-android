@@ -15,7 +15,7 @@ on:
       tag_name:
         description: 'Release Tag (e.g. v2.34.0)'
         required: false
-        default: 'v2.34.13'
+        default: 'v2.34.14'
       draft:
         description: 'Create Draft Release'
         type: boolean
@@ -151,8 +151,9 @@ jobs:
 
             ---
 
-            ### What's New in v2.34.13
+            ### What's New in v2.34.14
 
+            * **Account Vault & Instant Switcher:** Added **Settings → Accounts** and **Settings → Account → Saved Accounts** matching the native Settings design system, automatically saving logged-in credentials in an owner-only (`0600`) vault (`AccountVaultStore`) and enabling one-tap in-place account switching.
             * **Clean UI Overlay:** Removed the floating `AGY` pill and `QuickControlSheet` (`Antigravity Control`) modal overlay for an unobstructed chat workspace.
             * **Faster `pkg` Package Manager (`pkg_core.py`):** Mtime-cached `dpkg`/`Packages` indexing, full DFS dependency & upgrade planning with disk-space preflight, conditional `curl -z` updates, parallel `curl -Z --http2` downloads with per-file SHA256 mirror fallback, single-pass staged `.deb` validation/extraction with byte-length-preserving ELF prefix rewriting, `--keep-cache` flag, and de-prioritized `tuna` fallback in `repo.conf`.
             * **Security Hardening & Lifecycle Stability:** Per-boot bearer token auth in `SystemGatewayServer`, token gating on mutating `AndroidBridge` calls, bounded `/exec` concurrency and timeouts, loopback core TLS pinning in WebView, persistent `fcntl.flock` on `daemon.lock` + deduplicated logging in `agy-daemon`, `SplashController` WebView teardown on dismiss, clickable `ForegroundNotification` resume intent, and capped crash/stderr logs.
@@ -167,4 +168,4 @@ jobs:
             ---
 
             > [!NOTE]
-            > **Seamless Upgrades:** Built with the consistent embedded signing keystore (`APP_VERSION_CODE=23413`). You can install this update directly over previous v2.x releases without uninstalling or losing local projects.
+            > **Seamless Upgrades:** Built with the consistent embedded signing keystore (`APP_VERSION_CODE=23414`). You can install this update directly over previous v2.x releases without uninstalling or losing local projects.

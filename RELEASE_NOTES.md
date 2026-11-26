@@ -1,3 +1,22 @@
+# Antigravity for Android v2.34.14
+
+## Release Packages
+
+| Package | Application ID | Runtime Port | Description |
+| :--- | :--- | :--- | :--- |
+| **`antigravity.apk`** | `com.agy` | 45157 | Standard production release with original Google account checks. |
+| **`antigravity-region-bypass.apk`** | `com.agy` | 45157 | Region-bypass edition with account eligibility check bypass. |
+| **`SHA256SUMS.txt`** | — | — | Cryptographic SHA-256 checksums for verification. |
+
+## Changes & Fixes (v2.34.14)
+
+### 1. Multi-Account Vault & Instant Switcher in Settings
+* **Native Settings Integration (`Accounts` & `Account` → `Saved Accounts`):** Added an **Accounts** screen in Settings and embedded **Saved Accounts** inside the **Account** screen using the native Settings UI primitives (`LU`/`PU`/`NU`/`OU`/`BI`/`Dgb`), displaying every account ever signed into with avatar, name, email, tier badge, and active status.
+* **Owner-Only Credential Vault (`AccountVaultStore`):** Automatically snapshots `jetski-standalone-oauth-token` and profile metadata on every login (`0600` permissions in `$HOME/.gemini/agy-account-vault.json`) without ever exposing raw tokens to WebView JavaScript.
+* **Instant In-Place Switching:** Switches accounts in place by evicting core auth caches, atomically activating the saved token on disk, refreshing `checkCurrentAuthStatus()` and `userStatus` without leaving Settings, and cleanly falling back to core restart if needed.
+
+---
+
 # Antigravity for Android v2.34.13
 
 ## Release Packages
