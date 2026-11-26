@@ -1,3 +1,23 @@
+# Antigravity for Android v2.34.17
+
+## Release Packages
+
+| Package | Application ID | Runtime Port | Description |
+| :--- | :--- | :--- | :--- |
+| **`antigravity.apk`** | `com.agy` | 45157 | Standard production release with original Google account checks. |
+| **`antigravity-region-bypass.apk`** | `com.agy` | 45157 | Region-bypass edition with account eligibility check bypass. |
+| **`SHA256SUMS.txt`** | — | — | Cryptographic SHA-256 checksums for verification. |
+
+## Changes & Fixes (v2.34.17)
+
+### 1. Direct Browser GitHub Login (OAuth 2.0 Device Flow)
+* **Local Browser Sign-In & Multi-Account Support:** Add direct local browser sign-in (GitHub OAuth 2.0 Device Flow, RFC 8628 — zero client secret, zero third-party proxy) inside **Customizations → Installed → Plugins → GitHub (Local)** with full multi-account support (**Sign in with GitHub (Browser)** / **Add account with GitHub (Browser)**), while preserving manual PAT paste.
+
+### 2. Mobile Plugins UI Layout & Readability Fix
+* **Fix Vertical Narrow Text Collapse:** Fix mobile Plugins UI layout where `section[aria-label="Accounts"]` text, signed-in account rows, MCP banners, and warning callouts collapsed into a narrow vertical column beside action buttons; reclaim double horizontal padding on `plugin-detail` / `bundle-detail`.
+
+---
+
 # Antigravity for Android v2.34.16
 
 ## Release Packages
