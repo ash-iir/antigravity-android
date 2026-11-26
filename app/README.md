@@ -128,7 +128,7 @@ The core binary (`language_server`) is compiled for Linux/Glibc and runs on Andr
 
 `AndroidBridge` exposes a tightly scoped `@JavascriptInterface`:
 
-- **Token-Gated Mutation APIs:** State-mutating and sensitive methods (`onUiReady`, `onUiError`, `openDirectoryPicker`, `setTheme`, `setThemeByUser`, `onVisualThemeChanged`, `setDesktopMode`, `saveBlob`, `notifyAgentEvent`, `hasClipboardImage`, `requestClipboardImagePaste`, `readClipboardImage`) require `blobBridgeToken` verified with constant-time `MessageDigest.isEqual`.
+- **Token-Gated Mutation APIs:** State-mutating and sensitive methods (`onUiReady`, `onUiError`, `openDirectoryPicker`, `setTheme`, `setThemeByUser`, `onVisualThemeChanged`, `setDesktopMode`, `saveBlob`, `notifyAgentEvent`, `hasClipboardImage`, `requestClipboardImagePaste`, `readClipboardImage`, `startGitHubDeviceAuth`, `pollGitHubDeviceAuth`, `openGitHubDevicePage`, `copyGitHubDeviceCode`) require `blobBridgeToken` verified with constant-time `MessageDigest.isEqual`. GitHub Device Flow (`com.agy.oauth.GitHubDeviceAuth`) talks strictly to `https://github.com/login/device/code` and `https://github.com/login/oauth/access_token`, locks browser launch to `https://github.com/login/device`, and never logs access tokens or device codes.
 - **Execution Isolation:** Arbitrary shell and root execution are excluded from `AndroidBridge`. Native root (`RootBridge`, `RootResilience`) stays in Java and shell helpers (`agy-root`, `su`, `sudo`, `agy-sys`), and `SplashController` destroys its `WebView` (`destroy()`) on `dismiss()`.
 
 ### 2.5. Dynamic Launcher Icons & Themes (`com.agy.theme`)

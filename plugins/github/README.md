@@ -5,10 +5,12 @@ Bundled local multi-account GitHub plugin for Antigravity (seeded into
 
 ## Features
 
-- **Multi-account local auth:** Connect as many GitHub accounts as you need in
-  **Customizations → Installed → Plugins → GitHub (Local)** using Personal
-  Access Tokens (PATs). No OAuth client secret or cloud storage is
-  required—credentials remain local on the device.
+- **Direct local browser login (GitHub Device Flow):** Sign in or add multiple
+  GitHub accounts directly via your browser using GitHub's OAuth 2.0 Device Flow
+  (`https://github.com/login/device/code` and
+  `https://github.com/login/oauth/access_token`, public client ID, zero
+  `client_secret`, zero third-party proxy). Manual Personal Access Token (PAT)
+  paste remains available as a fallback. Credentials stay local on this device.
 - **Account labels & defaults:** Label each account (for example `personal`,
   `work`, `oss`), choose a default account, and let agents target specific
   accounts with `AGY_ACCOUNT=<account>`.

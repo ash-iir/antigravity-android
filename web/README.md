@@ -82,6 +82,7 @@ web/
 │       ├── agent_notify.js
 │       ├── clipboard_image_paste.js
 │       ├── back_navigation.js
+│       ├── github_device_auth.js
 │       └── startup_ready.js
 ├── src/                          # Modular source fragments
 │   ├── boot/                     # Early boot fragments
@@ -109,12 +110,13 @@ web/
 | **`boot/custom-elements-guard.js`** | IIFE | ~514 B | Guards against duplicate CustomElement registration crashes. |
 | **`boot/theme-bootstrap.js`** | IIFE | ~1.3 KB | Applies `light`/`dark` class and `colorScheme` synchronously before first paint. |
 | **`bridge.core.js`** | IIFE | ~16 KB | Polyfills `window.process`, config, CSRF, endpoint discovery, and `fetch` retry/stream recovery. |
-| **`patches/web_optimizations.js`** | IIFE | ~5.4 KB | Disables 300 ms tap delay, tracks `visualViewport` (`--agy-vvh`), limits GPU layer hints. |
+| **`patches/web_optimizations.js`** | IIFE | ~8.7 KB | Disables 300 ms tap delay, tracks `visualViewport` (`--agy-vvh`), limits GPU layer hints, and applies container-responsive Flexbox & mobile Plugins/Accounts layout fixes. |
 | **`patches/touch_model_menu.js`** | IIFE | ~6.7 KB | Adapts hover-only Base UI model reasoning dropdowns to touch tap sequences. |
 | **`patches/theme_sync.js`** | IIFE | ~4.8 KB | Observes `<html>`/`<body>` theme classes and forwards token-gated changes to `AndroidBridge`. |
 | **`patches/agent_notify.js`** | IIFE | ~3.2 KB | Bridges agent audio cues and Notification API events to native clickable Android alerts. |
 | **`patches/clipboard_image_paste.js`** | IIFE | ~5.8 KB | Handles clipboard and IME (`commitContent`) image paste into the chat composer. |
 | **`patches/back_navigation.js`** | IIFE | ~15.4 KB | Exposes `window.__agHandleBack()` for step-by-step Android Back across Settings/Customizations overlays (ancestor z-index, Back/Close/Escape), in-layout back controls, renderer-initiated `window.history.back()` (`__TSR_index > 0`), breadcrumb fallback, and clean Home `'exit'` signaling. |
+| **`patches/github_device_auth.js`** | IIFE | ~31 KB | Injects 1-tap direct GitHub browser login (OAuth 2.0 Device Flow via `AndroidBridge`) into the `GitHub (Local)` Accounts card for both initial sign-in and multi-account "Add account", preserving manual PAT paste. |
 | **`patches/startup_ready.js`** | IIFE | ~4.7 KB | Signals first meaningful DOM render (`onUiReady`) and captures fatal JS errors. |
 | **`main.js`** | Raw + Patch | ~9.5 MB | Production React bundle patched by `patch_main.py`. |
 
@@ -150,6 +152,10 @@ web/
 | `hasClipboardImage` | `(token) => boolean` | Checks clipboard `ClipDescription` MIME types without triggering Android 12+ paste toast. |
 | `requestClipboardImagePaste` | `(token) => void` | Asynchronously decodes/downscales clipboard images into `window.__agPasteImage`. |
 | `readClipboardImage` | `(token) => string` | Synchronous clipboard image JSON fallback. |
+| `startGitHubDeviceAuth` | `(token, reqId, scope) => void` | Starts GitHub Device Flow (`POST https://github.com/login/device/code`) asynchronously and calls `window.__agGitHubDeviceAuthCallback(reqId, json)`. |
+| `pollGitHubDeviceAuth` | `(token, reqId, deviceCode) => void` | Polls `https://github.com/login/oauth/access_token` asynchronously and delivers status/token via `window.__agGitHubDeviceAuthCallback(reqId, json)`. |
+| `openGitHubDevicePage` | `(token, verificationUri) => boolean` | Opens GitHub's device verification page (locked to `https://github.com/login/device`) in the external browser. |
+| `copyGitHubDeviceCode` | `(token, userCode) => boolean` | Copies the 8-character GitHub device code to Android's clipboard on the UI thread. |
 
 ---
 
@@ -183,4 +189,4 @@ web/
 bash web/tests/selftest.sh
 ```
 
-Verifies isolated copy integrity, confirms upstream `web/main.js` SHA-256 stays unmodified, validates all generated bundles (`node --check`), checks there are no double-wrapped IIFEs, and runs Node.js behavioral checks confirming `agy:host-resume` resets stalled `StreamAgentStateUpdates` streams (deferring while hidden) without aborting caller signals or unary/audio RPCs and `window.__agHandleBack()` handles ancestor z-index overlays, Back/Close/Escape dismissal, in-layout controls, `window.history.back()` SPA step-back, parent breadcrumb fallback, and clean Home `'exit'` signaling.
+Verifies isolated copy integrity, confirms upstream `web/main.js` SHA-256 stays unmodified, validates all generated bundles (`node --check`), checks there are no double-wrapped IIFEs, and runs Node.js behavioral checks confirming `agy:host-resume` resets stalled `StreamAgentStateUpdates` streams (deferring while hidden) without aborting caller signals or unary/audio RPCs, `window.__agHandleBack()` handles ancestor z-index overlays, Back/Close/Escape dismissal, in-layout controls, `window.history.back()` SPA step-back, parent breadcrumb fallback, and clean Home `'exit'` signaling, `patches/web_optimizations.js` injects balanced Plugins mobile/Flexbox CSS rules, and `patches/github_device_auth.js` scopes strictly to `GitHub (Local)` and drives both initial sign-in and multi-account Device Flow polling/submission cleanly.
