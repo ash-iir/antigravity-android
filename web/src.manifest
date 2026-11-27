@@ -71,6 +71,3 @@ src/patches/github_device_auth/install.js
 
 bundle iife patches/account_switcher.js
 src/patches/account_switcher/install.js
-
-bundle iife patches/swarm_chip.js
-src/patches/swarm_chip/install.js

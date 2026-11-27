@@ -84,7 +84,6 @@ web/
 │       ├── back_navigation.js
 │       ├── github_device_auth.js
 │       ├── account_switcher.js
-│       ├── swarm_chip.js
 │       └── startup_ready.js
 ├── src/                          # Modular source fragments
 │   ├── boot/                     # Early boot fragments
@@ -120,7 +119,6 @@ web/
 | **`patches/back_navigation.js`** | IIFE | ~18 KB | Exposes `window.__agHandleBack()` for step-by-step Android Back across Settings/Customizations overlays (ancestor z-index, Back/Close/Escape), in-layout back controls, renderer-initiated `window.history.back()` (`__TSR_index > 0`), breadcrumb fallback, and clean Home `'exit'` signaling; also intercepts short taps on `[data-testid="mobile-back-to-home"]` on nested sub-routes for 1-step back (long-press >= 450ms or top-level routes jump straight to Home `/`). |
 | **`patches/github_device_auth.js`** | IIFE | ~31 KB | Injects 1-tap direct GitHub browser login (OAuth 2.0 Device Flow via `AndroidBridge`) into the `GitHub (Local)` Accounts card for both initial sign-in and multi-account "Add account", preserving manual PAT paste. |
 | **`patches/account_switcher.js`** | IIFE | ~16.7 KB | Renders Settings -> Accounts and Account -> Saved Accounts using native Settings primitives (`LU`/`PU`/`NU`/`OU`/`BI`/`Dgb`), auto-syncs logged-in accounts, and performs instant hot-swap switching. |
-| **`patches/swarm_chip.js`** | IIFE | ~9.5 KB | Injects a compact, theme-matched `/swarm` toggle chip into the chat composer footer (`[data-agent-composer-root]`) that prefixes/removes `/swarm ` using Lexical-compatible input events while preserving existing draft text. |
 | **`patches/startup_ready.js`** | IIFE | ~4.7 KB | Signals first meaningful DOM render (`onUiReady`) and captures fatal JS errors. |
 | **`main.js`** | Raw + Patch | ~9.5 MB | Production React bundle patched by `patch_main.py`. |
 
@@ -199,4 +197,4 @@ web/
 bash web/tests/selftest.sh
 ```
 
-Verifies isolated copy integrity, confirms upstream `web/main.js` SHA-256 stays unmodified, validates all generated bundles (`node --check`), checks there are no double-wrapped IIFEs, and runs Node.js behavioral checks covering `agy:host-resume` stalled-stream recovery, `window.__agHandleBack()` + on-screen `mobile-back-to-home` 1-step back/long-press passthrough, `patches/web_optimizations.js` Plugins mobile/Flexbox CSS, `patches/github_device_auth.js` Device Flow, `patches/swarm_chip.js` `/swarm ` toggle chip, and `patches/agent_notify.js` native notification bridge.
+Verifies isolated copy integrity, confirms upstream `web/main.js` SHA-256 stays unmodified, validates all generated bundles (`node --check`), checks there are no double-wrapped IIFEs, and runs Node.js behavioral checks covering `agy:host-resume` stalled-stream recovery, `window.__agHandleBack()` + on-screen `mobile-back-to-home` 1-step back/long-press passthrough, `patches/web_optimizations.js` Plugins mobile/Flexbox CSS, `patches/github_device_auth.js` Device Flow, and `patches/agent_notify.js` native notification bridge.
