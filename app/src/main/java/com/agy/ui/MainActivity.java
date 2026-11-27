@@ -56,7 +56,6 @@ public class MainActivity extends Activity
     private static final int REQUEST_MEDIA_PERMISSIONS = 1003;
     private static final long SPLASH_TIMEOUT_MS = 60000;
     private static final long POLL_STARTUP_INTERVAL_MS = 50;
-    private static final long POLL_READY_INTERVAL_MS = 1000;
     private static final long NETWORK_NOTIFY_DEBOUNCE_MS = 800;
 
     public static volatile MainActivity activeActivity;
@@ -83,8 +82,38 @@ public class MainActivity extends Activity
     private boolean activityResumed = false;
     private int loadedGeneration = -1;
     private long splashDeadline;
+    private long lastSyncedTokenMtime = -1L;
+    private String lastAppliedTheme = null;
+    private boolean destroying = false;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
+
+    private final Runnable splashWatchdog = new Runnable() {
+        @Override
+        public void run() {
+            if (!destroying && appLoaded && splash != null && !splash.isFatalShown()) {
+                Log.w(TAG, "watchdog: auto-dismissing splash after timeout");
+                dismissSplash();
+            }
+        }
+    };
+
+    private final Runnable coreStateCallback = new Runnable() {
+        @Override
+        public void run() {
+            if (destroying) {
+                return;
+            }
+            handler.post(new Runnable() {
+                @Override
+                public void run() {
+                    if (!destroying && activityResumed) {
+                        watchCore();
+                    }
+                }
+            });
+        }
+    };
 
     private final Runnable notifyWebViewNetworkOnline = new Runnable() {
         @Override
@@ -110,16 +139,15 @@ public class MainActivity extends Activity
     };
 
     /**
-     * Runs for the whole activity life: it drives the splash, loads the app on
-     * ready, and keeps watching for a post-ready core death.
+     * Runs during core startup/restart until the UI is loaded; once steady-state
+     * is reached, updates arrive via {@link CoreRuntimeState#setStateListener}.
      */
     private final Runnable pollServer = new Runnable() {
         @Override
         public void run() {
             watchCore();
-            if (activityResumed) {
-                handler.postDelayed(this, appLoaded
-                        ? POLL_READY_INTERVAL_MS : POLL_STARTUP_INTERVAL_MS);
+            if (activityResumed && (!appLoaded || CoreRuntimeState.restarting)) {
+                handler.postDelayed(this, POLL_STARTUP_INTERVAL_MS);
             }
         }
     };
@@ -144,15 +172,8 @@ public class MainActivity extends Activity
                     splash.showLoading();
                 }
                 webViewHost.loadApp();
-                handler.postDelayed(new Runnable() {
-                    @Override
-                    public void run() {
-                        if (appLoaded && !splash.isFatalShown()) {
-                            Log.w(TAG, "watchdog: auto-dismissing splash after timeout");
-                            dismissSplash();
-                        }
-                    }
-                }, 10000);
+                handler.removeCallbacks(splashWatchdog);
+                handler.postDelayed(splashWatchdog, 10000);
             }
             return;
         }
@@ -200,6 +221,7 @@ public class MainActivity extends Activity
         splash.installExitAnimation(this);
 
         splashDeadline = System.currentTimeMillis() + SPLASH_TIMEOUT_MS;
+        CoreRuntimeState.setStateListener(coreStateCallback);
         com.agy.ui.download.FileDownloader.pruneStalePendingBlobsAsync(this);
         requestAppPermissions();
 
@@ -259,6 +281,56 @@ public class MainActivity extends Activity
         Log.i(TAG, "onPageFinished " + SensitiveDataRedactor.safeUrl(url));
     }
 
+    @Override
+    public void onRenderProcessGone(boolean didCrash) {
+        handler.post(new Runnable() {
+            @Override
+            public void run() {
+                if (destroying || isFinishing()) {
+                    return;
+                }
+                Log.w(TAG, "Recreating WebView after renderer termination (didCrash=" + didCrash + ")");
+                handler.removeCallbacks(splashWatchdog);
+                if (webViewHost != null) {
+                    WebView old = webViewHost.getWebView();
+                    if (old != null) {
+                        if (rootLayout != null) {
+                            rootLayout.removeView(old);
+                        }
+                        destroyWebViewInstance(old);
+                    }
+                }
+                webViewHost = new WebViewHost(MainActivity.this, themeManager, oauthManager, androidBridge, MainActivity.this);
+                webViewHost.setListener(MainActivity.this);
+                if (rootLayout != null) {
+                    rootLayout.addView(webViewHost.getWebView(), 0, ViewParams.full());
+                }
+                appLoaded = false;
+                loadedGeneration = -1;
+                lastAppliedTheme = null;
+                if (splash != null) {
+                    splash.showLoading();
+                }
+                watchCore();
+            }
+        });
+    }
+
+    private static void destroyWebViewInstance(WebView wv) {
+        if (wv == null) {
+            return;
+        }
+        try {
+            wv.stopLoading();
+            wv.setWebChromeClient(null);
+            wv.setWebViewClient(null);
+            wv.setDownloadListener(null);
+            wv.destroy();
+        } catch (Exception e) {
+            Log.w(TAG, "error destroying webView", e);
+        }
+    }
+
     /** Idempotent; called by AndroidBridge.onUiReady() on the main thread. */
     public void dismissSplash() {
         Log.i(TAG, "dismissSplash: fading out splashView (280ms)");
@@ -290,12 +362,15 @@ public class MainActivity extends Activity
 
     @Override
     protected void onDestroy() {
+        destroying = true;
         activityResumed = false;
         sInForeground = false;
+        CoreRuntimeState.setStateListener(null);
         if (activeActivity == this) {
             activeActivity = null;
         }
         handler.removeCallbacks(notifyWebViewNetworkOnline);
+        handler.removeCallbacks(splashWatchdog);
         if (splash != null) {
             splash.destroy();
         }
@@ -308,18 +383,7 @@ public class MainActivity extends Activity
             rootLayout.removeAllViews();
         }
         if (webViewHost != null) {
-            WebView wv = webViewHost.getWebView();
-            if (wv != null) {
-                try {
-                    wv.stopLoading();
-                    wv.setWebChromeClient(null);
-                    wv.setWebViewClient(null);
-                    wv.setDownloadListener(null);
-                    wv.destroy();
-                } catch (Exception e) {
-                    Log.w(TAG, "error destroying webView", e);
-                }
-            }
+            destroyWebViewInstance(webViewHost.getWebView());
         }
         if (pendingPermissionRequest != null) {
             try {
@@ -379,22 +443,33 @@ public class MainActivity extends Activity
         }
         refreshTheme();
         if (OAuthTokenStore.hasToken(this)) {
-            final android.content.Context appCtx = getApplicationContext();
-            new Thread(new Runnable() {
-                @Override
-                public void run() {
-                    com.agy.oauth.AccountVaultStore.syncCurrentAccount(appCtx, null);
-                }
-            }, "AgyVaultSync").start();
+            java.io.File tokenFile = OAuthTokenStore.tokenFile(this);
+            final long tokenMtime = tokenFile != null ? tokenFile.lastModified() : -1L;
+            if (tokenMtime > 0 && tokenMtime != lastSyncedTokenMtime) {
+                lastSyncedTokenMtime = tokenMtime;
+                final android.content.Context appCtx = getApplicationContext();
+                Thread t = new Thread(new Runnable() {
+                    @Override
+                    public void run() {
+                        com.agy.oauth.AccountVaultStore.syncCurrentAccount(appCtx, null);
+                    }
+                }, "AgyVaultSync");
+                t.setDaemon(true);
+                t.start();
+            }
         }
         handler.removeCallbacks(pollServer);
         handler.post(pollServer);
     }
 
     private void refreshTheme() {
+        String resolved = themeManager != null ? themeManager.getTheme() : "light";
+        if (resolved.equals(lastAppliedTheme)) {
+            return;
+        }
+        lastAppliedTheme = resolved;
         ThemeRefresher.refresh(this, themeManager, rootLayout, splash, webViewHost);
         if (webViewHost != null && webViewHost.getWebView() != null) {
-            String resolved = themeManager != null ? themeManager.getTheme() : "light";
             webViewHost.getWebView().evaluateJavascript(
                     "window.__AG_RESOLVED_THEME__='" + resolved + "'; window.__agOnSystemThemeChanged && window.__agOnSystemThemeChanged();", null);
         }

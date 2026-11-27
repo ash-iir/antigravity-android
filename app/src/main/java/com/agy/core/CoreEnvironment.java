@@ -1,5 +1,6 @@
 package com.agy.core;
 
+import android.app.ActivityManager;
 import android.content.Context;
 import android.util.Log;
 
@@ -12,22 +13,47 @@ import java.util.Map;
 public final class CoreEnvironment {
 
     private static final String TAG = "CoreEnvironment";
+    private static final long SIDECAR_MIN_RAM_BYTES = 5500L * 1024 * 1024;
 
     private CoreEnvironment() {
     }
 
+    private static final class CpuFeatures {
+        final boolean hasAes;
+        final boolean hasPmull;
+        final boolean hasSha1;
+        final boolean hasSha2;
+        final boolean hasAtomics;
+        final boolean isMt676x;
+        final boolean is64Bit;
+
+        CpuFeatures(boolean hasAes, boolean hasPmull, boolean hasSha1,
+                    boolean hasSha2, boolean hasAtomics, boolean isMt676x, boolean is64Bit) {
+            this.hasAes = hasAes;
+            this.hasPmull = hasPmull;
+            this.hasSha1 = hasSha1;
+            this.hasSha2 = hasSha2;
+            this.hasAtomics = hasAtomics;
+            this.isMt676x = isMt676x;
+            this.is64Bit = is64Bit;
+        }
+    }
+
+    private static CpuFeatures sCpuFeatures = null;
+
     public static void apply(RuntimeManager rm, ProcessBuilder pb) {
-        File files = rm.appContext().getFilesDir();
+        Context appCtx = rm.appContext();
+        File files = appCtx.getFilesDir();
         File bin = rm.getBinDir();
         Map<String, String> env = pb.environment();
         // HOME is the app files dir and never a temp dir; it is stable across
         // builds so the core always finds $HOME/.gemini (token, config, chats).
         env.put("HOME", files.getAbsolutePath());
-        env.put("TMPDIR", rm.appContext().getCacheDir().getAbsolutePath());
+        env.put("TMPDIR", appCtx.getCacheDir().getAbsolutePath());
         Log.i(TAG, "core env: HOME=" + files.getAbsolutePath()
                 + " appDataDir=" + rm.getAppDataDir().getAbsolutePath()
                 + " projectsDir=" + rm.getProjectsDir().getAbsolutePath()
-                + " TMPDIR=" + rm.appContext().getCacheDir().getAbsolutePath());
+                + " TMPDIR=" + appCtx.getCacheDir().getAbsolutePath());
         File prefix = new File(files, com.agy.install.EnvPaths.PREFIX_DIR);
         File prefixCert = new File(prefix, "etc/tls/cert.pem");
         File certFile = prefixCert.isFile() ? prefixCert : rm.getCertFile();
@@ -79,12 +105,34 @@ public final class CoreEnvironment {
             godebugBuilder.append(godebug).append(",");
         }
         godebugBuilder.append("netdns=go,asyncpreemptoff=1");
-        if (!hasArmHardwareCrypto()) {
+
+        CpuFeatures cpu = getCpuFeatures();
+        if (!cpu.is64Bit || cpu.isMt676x) {
             Log.w(TAG, "CPU lacks ARMv8 crypto/atomics extension; disabling Go hardware crypto acceleration");
             godebugBuilder.append(",cpu.all=off,arm64.aes=off,arm64.pmull=off,arm64.sha1=off,arm64.sha2=off,arm64.sha3=off,arm64.sha512=off,arm64.crc32=off,arm64.atomics=off,arm64.cpuid=off");
+        } else {
+            // Granular flags: keep hardware AES/SHA enabled on ARMv8.0-A mid-range SoCs
+            // that implement crypto extensions even when LSE atomics are absent.
+            if (!cpu.hasAes) {
+                godebugBuilder.append(",arm64.aes=off");
+            }
+            if (!cpu.hasPmull) {
+                godebugBuilder.append(",arm64.pmull=off");
+            }
+            if (!cpu.hasSha1) {
+                godebugBuilder.append(",arm64.sha1=off");
+            }
+            if (!cpu.hasSha2) {
+                godebugBuilder.append(",arm64.sha2=off");
+            }
+            if (!cpu.hasAtomics) {
+                godebugBuilder.append(",arm64.atomics=off");
+            }
         }
-
         env.put("GODEBUG", godebugBuilder.toString());
+
+        applyGoMemoryTuning(appCtx, env);
+
         // Emits "ANTIGRAVITY_OPEN_URL: <url>" directly to stdout from language_server
         // so OpenUrlWatcher captures the auth URL and opens the external browser reliably.
         env.put("ANTIGRAVITY_VSCODE_HOST", "1");
@@ -107,7 +155,45 @@ public final class CoreEnvironment {
         env.remove("LD_PRELOAD");
     }
 
-    private static Boolean sHasArmCrypto = null;
+    private static void applyGoMemoryTuning(Context context, Map<String, String> env) {
+        if (context == null) {
+            return;
+        }
+        try {
+            ActivityManager am = (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
+            if (am == null) {
+                return;
+            }
+            ActivityManager.MemoryInfo mi = new ActivityManager.MemoryInfo();
+            am.getMemoryInfo(mi);
+            long totalMb = mi.totalMem / (1024L * 1024L);
+            String memLimit;
+            String gogc;
+            if (totalMb < 3500L) {
+                memLimit = "448MiB";
+                gogc = "75";
+            } else if (totalMb < 5500L) {
+                memLimit = "640MiB";
+                gogc = "85";
+            } else if (totalMb < 7500L) {
+                memLimit = "1024MiB";
+                gogc = "100";
+            } else {
+                memLimit = "1536MiB";
+                gogc = "100";
+            }
+            if (!env.containsKey("GOMEMLIMIT")) {
+                env.put("GOMEMLIMIT", memLimit);
+            }
+            if (!env.containsKey("GOGC")) {
+                env.put("GOGC", gogc);
+            }
+            Log.i(TAG, "Go runtime tuning (device RAM=" + totalMb + "MB): GOMEMLIMIT="
+                    + env.get("GOMEMLIMIT") + " GOGC=" + env.get("GOGC"));
+        } catch (Throwable t) {
+            Log.w(TAG, "failed to configure Go memory tuning: " + t.getMessage());
+        }
+    }
 
     /**
      * Determines whether the current device is capable of running background sidecars
@@ -115,7 +201,7 @@ public final class CoreEnvironment {
      *
      * Returns false on:
      * - Budget SoCs lacking hardware crypto/atomics (e.g. MediaTek MT676x / Cortex-A53).
-     * - Devices flagged as isLowRamDevice or having < 3.5GB RAM (prevents LMKD kills).
+     * - Devices flagged as isLowRamDevice or having < 5.5GB RAM (protects 4GB mid-range devices).
      */
     public static boolean isSidecarsSupported(Context context) {
         if (!hasArmHardwareCrypto()) {
@@ -124,17 +210,16 @@ public final class CoreEnvironment {
         }
         if (context != null) {
             try {
-                android.app.ActivityManager am = (android.app.ActivityManager)
-                        context.getSystemService(Context.ACTIVITY_SERVICE);
+                ActivityManager am = (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
                 if (am != null) {
                     if (am.isLowRamDevice()) {
                         Log.i(TAG, "sidecars disabled: isLowRamDevice is true");
                         return false;
                     }
-                    android.app.ActivityManager.MemoryInfo mi = new android.app.ActivityManager.MemoryInfo();
+                    ActivityManager.MemoryInfo mi = new ActivityManager.MemoryInfo();
                     am.getMemoryInfo(mi);
-                    if (mi.totalMem < 3500L * 1024 * 1024) {
-                        Log.i(TAG, "sidecars disabled: device RAM < 3.5GB (" + (mi.totalMem / (1024 * 1024)) + "MB)");
+                    if (mi.totalMem < SIDECAR_MIN_RAM_BYTES) {
+                        Log.i(TAG, "sidecars disabled: device RAM < 5.5GB (" + (mi.totalMem / (1024 * 1024)) + "MB)");
                         return false;
                     }
                 }
@@ -152,36 +237,38 @@ public final class CoreEnvironment {
      * Cortex-A53), executing hardware crypto instructions raises SIGILL (exit code 132).
      */
     public static synchronized boolean hasArmHardwareCrypto() {
-        if (sHasArmCrypto != null) {
-            return sHasArmCrypto;
+        CpuFeatures cpu = getCpuFeatures();
+        return cpu.is64Bit && !cpu.isMt676x && cpu.hasAes && cpu.hasPmull && cpu.hasAtomics;
+    }
+
+    private static synchronized CpuFeatures getCpuFeatures() {
+        if (sCpuFeatures != null) {
+            return sCpuFeatures;
         }
         String arch = System.getProperty("os.arch", "").toLowerCase(java.util.Locale.US);
         if (!arch.contains("aarch64") && !arch.contains("arm64") && !arch.contains("arm")) {
-            sHasArmCrypto = true;
-            return true;
+            sCpuFeatures = new CpuFeatures(true, true, true, true, true, false, true);
+            return sCpuFeatures;
         }
 
-        // 0. ABI check: 32-bit userspace / devices (armeabi-v7a) lack 64-bit ARMv8 crypto/atomics
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
             String[] abis64 = android.os.Build.SUPPORTED_64_BIT_ABIS;
             if (abis64 == null || abis64.length == 0) {
                 Log.i(TAG, "device reports no 64-bit ABIs; disabling hardware acceleration");
-                sHasArmCrypto = false;
-                return false;
+                sCpuFeatures = new CpuFeatures(false, false, false, false, false, false, false);
+                return sCpuFeatures;
             }
         }
 
-        // 1. Direct SoC detection: MediaTek Helio A20/A22 (MT6761), G25/P22 (MT6762), G35/P35 (MT6765)
-        // are budget 4x/8x Cortex-A53 chipsets where ARMv8 Crypto Extension is physically omitted in silicon.
         String hardware = android.os.Build.HARDWARE != null ? android.os.Build.HARDWARE.toLowerCase(java.util.Locale.US) : "";
         String board = android.os.Build.BOARD != null ? android.os.Build.BOARD.toLowerCase(java.util.Locale.US) : "";
-        if (hardware.startsWith("mt676") || board.startsWith("mt676") || hardware.contains("mt6761") || hardware.contains("mt6762")) {
+        if (hardware.startsWith("mt676") || board.startsWith("mt676")
+                || hardware.contains("mt6761") || hardware.contains("mt6762")) {
             Log.i(TAG, "detected MediaTek Helio MT676x SoC (hardware=" + hardware + ", board=" + board + ") without crypto extension");
-            sHasArmCrypto = false;
-            return false;
+            sCpuFeatures = new CpuFeatures(false, false, false, false, false, true, true);
+            return sCpuFeatures;
         }
 
-        // 2. Hardware feature inspection via /proc/cpuinfo
         File cpuinfo = new File("/proc/cpuinfo");
         try (java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.FileReader(cpuinfo))) {
             String line;
@@ -190,21 +277,21 @@ public final class CoreEnvironment {
                 if (line.startsWith("features") || line.startsWith("flags")) {
                     int colon = line.indexOf(':');
                     if (colon >= 0) {
-                        String flags = line.substring(colon + 1);
-                        boolean hasAes = flags.contains("aes");
-                        boolean hasPmull = flags.contains("pmull");
-                        boolean hasAtomics = flags.contains("atomics");
-                        // Modern chips with hardware crypto and LSE have aes, pmull, and atomics
-                        sHasArmCrypto = hasAes && hasPmull && hasAtomics;
-                        return sHasArmCrypto;
+                        String flags = " " + line.substring(colon + 1).trim() + " ";
+                        boolean hasAes = flags.contains(" aes ");
+                        boolean hasPmull = flags.contains(" pmull ");
+                        boolean hasSha1 = flags.contains(" sha1 ");
+                        boolean hasSha2 = flags.contains(" sha2 ");
+                        boolean hasAtomics = flags.contains(" atomics ");
+                        sCpuFeatures = new CpuFeatures(hasAes, hasPmull, hasSha1, hasSha2, hasAtomics, false, true);
+                        return sCpuFeatures;
                     }
                 }
             }
         } catch (Throwable t) {
             Log.w(TAG, "could not read /proc/cpuinfo for crypto probe: " + t.getMessage());
         }
-        // If unreadable or inconclusive on an ARM device, default to false (safe pure software crypto)
-        sHasArmCrypto = false;
-        return false;
+        sCpuFeatures = new CpuFeatures(false, false, false, false, false, false, true);
+        return sCpuFeatures;
     }
 }

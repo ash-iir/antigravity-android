@@ -15,6 +15,8 @@ import byte_replacer
 
 # mov x1, x0; mov x0, #434; bl syscall.Syscall; cbz x2, ...
 TARGETS = [
+    # v2.35.2
+    bytes.fromhex("e10300aa403680d21ac7fe97420100b4"),
     # v2.34.0
     bytes.fromhex("e10300aa403680d2fac6fe97420100b4"),
     # v2.33.0

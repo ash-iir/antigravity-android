@@ -42,12 +42,27 @@ RUNNING_JOBS = set()
 RUNNING_LOCK = threading.Lock()
 
 
+MAX_LOG_BYTES = 512 * 1024
+
+
+def _rotate_log_if_needed():
+    try:
+        if os.path.isfile(LOG_FILE) and os.path.getsize(LOG_FILE) >= MAX_LOG_BYTES:
+            old_log = LOG_FILE + ".old"
+            if os.path.isfile(old_log):
+                os.remove(old_log)
+            os.replace(LOG_FILE, old_log)
+    except OSError:
+        pass
+
+
 def log(msg):
     ts = time.strftime("%Y-%m-%d %H:%M:%S")
     formatted = f"[{ts}] {msg}"
     stdout_is_log = False
     try:
         os.makedirs(CONFIG_DIR, exist_ok=True)
+        _rotate_log_if_needed()
         with open(LOG_FILE, "a", encoding="utf-8") as f:
             try:
                 st_log = os.fstat(f.fileno())

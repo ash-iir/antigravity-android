@@ -19,7 +19,13 @@ find "$OBJ_DIR" -name '*.class' > "$CLASS_LIST"
 
 # D8 CLI does not accept raw directories directly (throws 'Unsupported source file type').
 # We pass classes via @argfile to eliminate ARG_MAX command line overflow.
+D8_MODE_FLAG="--release"
+if [ "${DEV_MODE:-0}" = "1" ]; then
+    D8_MODE_FLAG="--debug"
+fi
+
 java -cp "$R8_JAR" com.android.tools.r8.D8 \
+    "$D8_MODE_FLAG" \
     --output "$DEX_DIR" \
     --lib "$ANDROID_JAR" \
     --min-api "$MIN_API" \

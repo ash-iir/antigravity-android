@@ -105,14 +105,61 @@ def matches_cron(cron_expr, dt=None):
     return True
 
 
+def _compute_sleep_seconds(tasks, now):
+    """Compute an adaptive sleep interval so idle daemons wake infrequently."""
+    enabled = [t for t in tasks if t.get("enabled", True)]
+    if not enabled:
+        return 30.0
+    wait_sec = 30.0
+    for task in enabled:
+        trigger = task.get("trigger", {})
+        ttype = trigger.get("type", "delay")
+        if ttype in ("once", "delay"):
+            rem = max(1.0, float(trigger.get("run_at", 0)) - now)
+            wait_sec = min(wait_sec, rem)
+        elif ttype == "interval":
+            interval = float(trigger.get("interval_sec", 300))
+            last_run = float(trigger.get("last_run", 0))
+            rem = max(1.0, (last_run + interval) - now)
+            wait_sec = min(wait_sec, rem)
+        elif ttype == "cron":
+            # Wake shortly after next minute boundary
+            rem = max(2.0, 61.0 - (now % 60.0))
+            wait_sec = min(wait_sec, rem)
+        elif ttype in ("watch_file", "github_pr", "github_issue", "battery"):
+            interval = float(trigger.get("interval_sec", 15 if ttype == "watch_file" else 180))
+            last_check = float(trigger.get("last_check_ts", 0))
+            rem = max(1.0, (last_check + interval) - now)
+            wait_sec = min(wait_sec, rem)
+    return max(2.0, min(30.0, wait_sec))
+
+
 def daemon_loop():
     """Main scheduler ticking loop."""
     log("Antigravity background micro-daemon loop started.")
     webhook_threads = {}
+    cached_tasks = []
+    cached_stat = None
+    last_sleep = 5.0
+
+    from .executor import TASKS_FILE
 
     while not STOP_EVENT.is_set():
         try:
-            tasks = load_tasks()
+            try:
+                st = os.stat(TASKS_FILE)
+                stat_sig = (st.st_mtime_ns, st.st_size)
+            except OSError:
+                stat_sig = None
+
+            if stat_sig is None:
+                cached_tasks = []
+                cached_stat = None
+            elif stat_sig != cached_stat:
+                cached_tasks = load_tasks()
+                cached_stat = stat_sig
+
+            tasks = cached_tasks
             now = time.time()
             now_dt = datetime.now()
             changed = False
@@ -198,11 +245,19 @@ def daemon_loop():
 
             if changed:
                 save_tasks(tasks)
+                try:
+                    st = os.stat(TASKS_FILE)
+                    cached_stat = (st.st_mtime_ns, st.st_size)
+                except OSError:
+                    cached_stat = None
+
+            last_sleep = _compute_sleep_seconds(tasks, now)
 
         except Exception as e:
             log(f"Daemon scheduler error: {e}")
+            last_sleep = 10.0
 
-        STOP_EVENT.wait(5)
+        STOP_EVENT.wait(last_sleep)
     try:
         if read_daemon_pid() == os.getpid():
             os.unlink(PID_FILE)

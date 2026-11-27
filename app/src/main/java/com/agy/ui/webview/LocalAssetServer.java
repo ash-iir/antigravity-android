@@ -6,7 +6,6 @@ import android.util.Log;
 import android.webkit.WebResourceResponse;
 
 import com.agy.util.MimeTypes;
-import com.agy.util.PathSafety;
 import com.agy.util.TrustedCoreOrigin;
 
 import java.io.BufferedInputStream;
@@ -23,6 +22,35 @@ import java.util.Map;
 public final class LocalAssetServer {
 
     private static final String TAG = "WebViewHost";
+    private static final int MIN_BUF_BYTES = 4 * 1024;
+    private static final int MAX_BUF_BYTES = 64 * 1024;
+
+    private volatile File cachedWebDir;
+    private volatile String cachedCanonicalWeb;
+
+    public LocalAssetServer() {
+    }
+
+    public LocalAssetServer(Context context) {
+        initWebDir(context);
+    }
+
+    private void initWebDir(Context context) {
+        if (cachedCanonicalWeb != null || context == null) {
+            return;
+        }
+        synchronized (this) {
+            if (cachedCanonicalWeb != null) {
+                return;
+            }
+            try {
+                File dir = new File(context.getFilesDir(), "web");
+                cachedWebDir = dir;
+                cachedCanonicalWeb = dir.getCanonicalPath();
+            } catch (Exception ignored) {
+            }
+        }
+    }
 
     public WebResourceResponse intercept(Context context, Uri uri, String method, int enginePort) {
         if (uri == null || !"GET".equalsIgnoreCase(method)) {
@@ -40,11 +68,19 @@ public final class LocalAssetServer {
                 || path.contains("connect-websocket")) {
             return null;
         }
+        if (path.contains("..") || path.indexOf('\0') >= 0) {
+            return null;
+        }
+        initWebDir(context);
+        File webDir = cachedWebDir != null ? cachedWebDir : new File(context.getFilesDir(), "web");
+        String canonicalWeb = cachedCanonicalWeb;
         String relPath = path.startsWith("/") ? path.substring(1) : path;
-        File webDir = new File(context.getFilesDir(), "web");
         File target = new File(webDir, relPath);
         try {
-            String canonicalWeb = webDir.getCanonicalPath();
+            if (canonicalWeb == null) {
+                canonicalWeb = webDir.getCanonicalPath();
+                cachedCanonicalWeb = canonicalWeb;
+            }
             String canonicalTarget = target.getCanonicalPath();
             if (!canonicalTarget.startsWith(canonicalWeb + File.separator)
                     && !canonicalTarget.equals(canonicalWeb)) {
@@ -54,14 +90,16 @@ public final class LocalAssetServer {
             return null;
         }
         if (target.isFile() && target.canRead()) {
+            long len = target.length();
             try {
                 String mime = MimeTypes.getMimeType(target.getName());
                 String encoding = MimeTypes.isTextMime(mime) ? "UTF-8" : null;
-                Map<String, String> headers = new HashMap<>();
+                Map<String, String> headers = new HashMap<>(4);
                 headers.put("Access-Control-Allow-Origin", "*");
                 headers.put("Cache-Control", "public, max-age=31536000, immutable");
-                headers.put("Content-Length", String.valueOf(target.length()));
-                InputStream bis = new BufferedInputStream(new FileInputStream(target), 64 * 1024);
+                headers.put("Content-Length", String.valueOf(len));
+                int bufSize = (int) Math.min(MAX_BUF_BYTES, Math.max(MIN_BUF_BYTES, len));
+                InputStream bis = new BufferedInputStream(new FileInputStream(target), bufSize);
                 return new WebResourceResponse(mime, encoding, 200, "OK", headers, bis);
             } catch (Exception e) {
                 Log.w(TAG, "intercept failed for " + path, e);

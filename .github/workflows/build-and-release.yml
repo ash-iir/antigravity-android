@@ -13,9 +13,9 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: 'Release Tag (e.g. v2.34.0)'
+        description: 'Release Tag (e.g. v2.35.2)'
         required: false
-        default: 'v2.34.15'
+        default: 'v2.35.2'
       draft:
         description: 'Create Draft Release'
         type: boolean
@@ -151,14 +151,12 @@ jobs:
 
             ---
 
-            ### What's New in v2.34.15
+            ### What's New in v2.35.2
 
-            * **Settings → Account Fix:** Fixed `patch_main.py` hook placement and variable shadowing in the Account screen (`GOb`) so tapping the Account profile row opens smoothly alongside **Settings → Accounts**.
-            * **Account Vault & Instant Switcher:** Added **Settings → Accounts** and **Settings → Account → Saved Accounts** matching the native Settings design system, automatically saving logged-in credentials in an owner-only (`0600`) vault (`AccountVaultStore`) and enabling one-tap in-place account switching.
-            * **Clean UI Overlay:** Removed the floating `AGY` pill and `QuickControlSheet` (`Antigravity Control`) modal overlay for an unobstructed chat workspace.
-            * **Faster `pkg` Package Manager (`pkg_core.py`):** Mtime-cached `dpkg`/`Packages` indexing, full DFS dependency & upgrade planning with disk-space preflight, conditional `curl -z` updates, parallel `curl -Z --http2` downloads with per-file SHA256 mirror fallback, single-pass staged `.deb` validation/extraction with byte-length-preserving ELF prefix rewriting, `--keep-cache` flag, and de-prioritized `tuna` fallback in `repo.conf`.
-            * **Security Hardening & Lifecycle Stability:** Per-boot bearer token auth in `SystemGatewayServer`, token gating on mutating `AndroidBridge` calls, bounded `/exec` concurrency and timeouts, loopback core TLS pinning in WebView, persistent `fcntl.flock` on `daemon.lock` + deduplicated logging in `agy-daemon`, `SplashController` WebView teardown on dismiss, clickable `ForegroundNotification` resume intent, and capped crash/stderr logs.
-            * **Root, Chat Media & Update Checker:** Passive 24h `UpdateChecker`, clipboard/IME image paste in chat, native `RootBridge`/`RootResilience` (`agy-root`, `su`, `sudo`, `agy-sys`), and hardened Go TLS/DNS + `FileDownloader` blob spill recovery.
+            * **Upstream Antigravity 2.35.2:** Updated `language_server` (`2.35.2`) and web UI bundle (including Shiki worker, Prism components, and voices), with updated ELF patches (`pidfd`, `crash_suppressor`, dynamic `resolv_redirect`).
+            * **WebView Crash Recovery & Native Splash:** Added `onRenderProcessGone` automatic WebView recovery, `RENDERER_PRIORITY_BOUND`, and switched `SplashController` to `NativeSplashDotsView` (~40 MB RAM saved on launch).
+            * **Mid-Range & Long-Session Tuning:** Added RAM-scaled `GOMEMLIMIT`/`GOGC`, 5.5 GB sidecar RAM threshold, granular ARMv8.0 crypto flags, buffered in-session `core.log` rotation, debounced DNS sync, mobile `backdrop-filter` blur removal, filtered DOM mutation observer, adaptive `agy-daemon` sleep + log rotation, `ArrayDeque` log buffers, and `D8 --release` dexing.
+            * **Account Vault & Instant Switcher:** Persistent `0600` credential vault in **Settings → Accounts** and **Settings → Account → Saved Accounts**.
 
             ### Foundation Highlights
 
@@ -169,4 +167,4 @@ jobs:
             ---
 
             > [!NOTE]
-            > **Seamless Upgrades:** Built with the consistent embedded signing keystore (`APP_VERSION_CODE=23415`). You can install this update directly over previous v2.x releases without uninstalling or losing local projects.
+            > **Seamless Upgrades:** Built with the consistent embedded signing keystore (`APP_VERSION_CODE=23502`). You can install this update directly over previous v2.x releases without uninstalling or losing local projects.

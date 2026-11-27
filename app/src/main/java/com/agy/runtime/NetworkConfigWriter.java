@@ -16,11 +16,14 @@ import java.io.File;
 public final class NetworkConfigWriter {
 
     private static final String TAG = "NetworkConfigWriter";
+    private static final String HOSTS_CONTENT = "127.0.0.1 localhost\n::1 localhost\n";
+    private static volatile String lastResolvContent = null;
+    private static volatile int lastProjectCount = -1;
 
     private NetworkConfigWriter() {
     }
 
-    public static void write(Context appContext) {
+    public static synchronized void write(Context appContext) {
         File filesDir = appContext.getFilesDir();
         File etc = new File(filesDir, "etc");
         if (!etc.exists() && !etc.mkdirs()) {
@@ -34,68 +37,87 @@ public final class NetworkConfigWriter {
             resolv.append("nameserver ").append(ip).append('\n');
         }
         String resolvContent = resolv.toString();
-        String hostsContent = "127.0.0.1 localhost\n::1 localhost\n";
 
-        // Clean up any legacy external storage files
-        try {
-            new File("/sdcard/rslv.cnf").delete();
-            new File("/sdcard/hs").delete();
-            new File("/storage/emulated/0/rslv.cnf").delete();
-            new File("/storage/emulated/0/hs").delete();
-        } catch (Exception ignored) {
+        File geminiProjects = new File(filesDir, ".gemini/config/projects");
+        File[] geminiDirs = geminiProjects.listFiles();
+        File legacyProjects = new File(filesDir, "projects");
+        File[] legacyDirs = legacyProjects.listFiles();
+        int projectCount = (geminiDirs != null ? geminiDirs.length : 0)
+                + (legacyDirs != null ? legacyDirs.length : 0);
+
+        // Skip redundant fsync storms across all project directories when DNS servers
+        // and project directory count have not changed since the previous write.
+        if (resolvContent.equals(lastResolvContent)
+                && projectCount == lastProjectCount
+                && new File(etc, "resolv.conf").isFile()) {
+            return;
+        }
+
+        // Clean up any legacy external storage files once
+        if (lastResolvContent == null) {
+            try {
+                new File("/sdcard/rslv.cnf").delete();
+                new File("/sdcard/hs").delete();
+                new File("/storage/emulated/0/rslv.cnf").delete();
+                new File("/storage/emulated/0/hs").delete();
+            } catch (Exception ignored) {
+            }
         }
 
         // 1. App root etc (for core in filesDir)
-        AtomicFileWriter.writeText(new File(etc, "resolv.conf"), resolvContent);
-        AtomicFileWriter.writeText(new File(etc, "hosts"), hostsContent);
+        syncDirFiles(etc, resolvContent);
 
-        // 3. Terminal & environment userspace prefix (usr/etc)
+        // 2. Terminal & environment userspace prefix (usr/etc)
         File usrEtc = new File(filesDir, "usr/etc");
         if (usrEtc.exists() || usrEtc.mkdirs()) {
-            AtomicFileWriter.writeText(new File(usrEtc, "resolv.conf"), resolvContent);
-            AtomicFileWriter.writeText(new File(usrEtc, "hosts"), hostsContent);
+            syncDirFiles(usrEtc, resolvContent);
         }
 
-        // 4. Projects directory ($HOME/.gemini/config/projects) and all subprojects
-        File geminiProjects = new File(filesDir, ".gemini/config/projects");
-        syncDirectoryEtc(geminiProjects, resolvContent, hostsContent);
-        File[] geminiDirs = geminiProjects.listFiles();
+        // 3. Projects directory ($HOME/.gemini/config/projects) and all subprojects
+        syncDirectoryEtc(geminiProjects, resolvContent);
         if (geminiDirs != null) {
             for (File p : geminiDirs) {
                 if (p.isDirectory()) {
-                    syncDirectoryEtc(p, resolvContent, hostsContent);
+                    syncDirectoryEtc(p, resolvContent);
                 }
             }
         }
 
-        // 5. filesDir/projects for backwards compatibility
-        File legacyProjects = new File(filesDir, "projects");
-        syncDirectoryEtc(legacyProjects, resolvContent, hostsContent);
-        File[] legacyDirs = legacyProjects.listFiles();
+        // 4. filesDir/projects for backwards compatibility
+        syncDirectoryEtc(legacyProjects, resolvContent);
         if (legacyDirs != null) {
             for (File p : legacyDirs) {
                 if (p.isDirectory()) {
-                    syncDirectoryEtc(p, resolvContent, hostsContent);
+                    syncDirectoryEtc(p, resolvContent);
                 }
             }
         }
 
-        // 6. Runtime directory
+        // 5. Runtime directory
         File runtimeEtc = new File(filesDir, "runtime/etc");
         if (runtimeEtc.exists()) {
-            AtomicFileWriter.writeText(new File(runtimeEtc, "resolv.conf"), resolvContent);
-            AtomicFileWriter.writeText(new File(runtimeEtc, "hosts"), hostsContent);
+            syncDirFiles(runtimeEtc, resolvContent);
+        }
+
+        lastResolvContent = resolvContent;
+        lastProjectCount = projectCount;
+    }
+
+    private static void syncDirFiles(File etcDir, String resolvContent) {
+        AtomicFileWriter.writeText(new File(etcDir, "resolv.conf"), resolvContent);
+        File hosts = new File(etcDir, "hosts");
+        if (!hosts.isFile() || hosts.length() == 0) {
+            AtomicFileWriter.writeText(hosts, HOSTS_CONTENT);
         }
     }
 
-    private static void syncDirectoryEtc(File dir, String resolvContent, String hostsContent) {
+    private static void syncDirectoryEtc(File dir, String resolvContent) {
         if (!dir.exists() && !dir.mkdirs()) {
             return;
         }
         File etc = new File(dir, "etc");
         if (etc.exists() || etc.mkdirs()) {
-            AtomicFileWriter.writeText(new File(etc, "resolv.conf"), resolvContent);
-            AtomicFileWriter.writeText(new File(etc, "hosts"), hostsContent);
+            syncDirFiles(etc, resolvContent);
         }
     }
 }
