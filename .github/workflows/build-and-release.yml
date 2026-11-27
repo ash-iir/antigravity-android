@@ -15,7 +15,7 @@ on:
       tag_name:
         description: 'Release Tag (e.g. v2.34.0)'
         required: false
-        default: 'v2.34.18'
+        default: 'v2.34.19'
       draft:
         description: 'Create Draft Release'
         type: boolean
@@ -151,11 +151,15 @@ jobs:
 
             ---
 
-            ### What's New in v2.34.18
+            ### What's New in v2.34.19
+
+            * **Upstream Merge (`salmanbappi/antigravity-android`):** Merged upstream `salmanbappi/antigravity-android` updates (Persistent Account Vault & Settings Account Switcher + scoped `GOb` Account screen hook) while preserving all Swarm, background-resume, OAuth redirect, Back navigation, GitHub Device Flow, and Plugins mobile UI fixes.
+
+            ### Previous Release Highlights (v2.34.18)
 
             * **Swarm Graph / Hive View WebView Rendering Fix:** Fixed duplicate/offset bees and text ghosting in the Swarm **Graph / Hive** tab on Android WebView by memoizing Hive/Mentions SVG & bee transforms (`dataset.tf`), isolating `.hv-stage`/`.hv-svg`/`.hv-bees` compositor layers, skipping `.hv` panes in `snapBees()`, pruning duplicate `.hv-bee` nodes, and coalescing `ResizeObserver` callbacks into a single rAF.
 
-            ### Previous Release Highlights (v2.34.17)
+            ### Earlier Highlights (v2.34.17)
 
             * **Direct Browser GitHub Login (OAuth 2.0 Device Flow):** Added direct local browser sign-in (GitHub OAuth 2.0 Device Flow, RFC 8628 — zero client secret, zero third-party proxy) inside **Customizations → Installed → Plugins → GitHub (Local)** with full multi-account support (**Sign in with GitHub (Browser)** / **Add account with GitHub (Browser)**), while preserving manual PAT paste.
             * **Mobile Plugins UI Layout Fix:** Fixed mobile Plugins UI layout where `section[aria-label="Accounts"]` text, signed-in account rows, MCP banners, and warning callouts collapsed into a narrow vertical column beside action buttons; reclaimed double horizontal padding on `plugin-detail` / `bundle-detail`.
@@ -194,4 +198,4 @@ jobs:
             ---
 
             > [!NOTE]
-            > **Seamless Upgrades:** Built with the consistent embedded signing keystore (`APP_VERSION_CODE=23418`). You can install this update directly over previous v2.x releases without uninstalling or losing local projects.
+            > **Seamless Upgrades:** Built with the consistent embedded signing keystore (`APP_VERSION_CODE=23419`). You can install this update directly over previous v2.x releases without uninstalling or losing local projects.

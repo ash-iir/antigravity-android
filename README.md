@@ -8,7 +8,7 @@
 
   [![Android](https://img.shields.io/badge/Android-7.0%2B-3DDC84?style=flat-square&logo=android&logoColor=white)](https://android.com)
   [![Arch](https://img.shields.io/badge/ARM64-v8.0--A%2B-blue?style=flat-square)](https://arm.com)
-  [![Release](https://img.shields.io/badge/Version-2.34.18-blueviolet?style=flat-square)](https://github.com/salmanbappi/antigravity-android/releases)
+  [![Release](https://img.shields.io/badge/Version-2.34.19-blueviolet?style=flat-square)](https://github.com/salmanbappi/antigravity-android/releases)
   [![Discord](https://img.shields.io/badge/Discord-Community-5865F2?style=flat-square&logo=discord&logoColor=white)](https://discord.gg/r4XTBuWpvA)
   [![License](https://img.shields.io/badge/License-Apache_2.0-orange?style=flat-square)](LICENSE)
 

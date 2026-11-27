@@ -1,3 +1,20 @@
+# Antigravity for Android v2.34.19
+
+## Release Packages
+
+| Package | Application ID | Runtime Port | Description |
+| :--- | :--- | :--- | :--- |
+| **`antigravity.apk`** | `com.agy` | 45157 | Standard production release with original Google account checks. |
+| **`antigravity-region-bypass.apk`** | `com.agy` | 45157 | Region-bypass edition with account eligibility check bypass. |
+| **`SHA256SUMS.txt`** | — | — | Cryptographic SHA-256 checksums for verification. |
+
+## Changes & Fixes (v2.34.19)
+
+### 1. Upstream Merge (`salmanbappi/antigravity-android`)
+* **Persistent Account Vault & Account Switcher:** Merge upstream `salmanbappi/antigravity-android` updates (Persistent Account Vault & Settings Account Switcher + scoped `GOb` Account screen hook) while preserving all Swarm, background-resume, OAuth redirect, Back navigation, GitHub Device Flow, and Plugins mobile UI fixes.
+
+---
+
 # Antigravity for Android v2.34.18
 
 ## Release Packages
