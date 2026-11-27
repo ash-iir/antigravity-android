@@ -1,3 +1,21 @@
+# Antigravity for Android v2.34.22
+
+## Release Packages
+
+| Package | Application ID | Runtime Port | Description |
+| :--- | :--- | :--- | :--- |
+| **`antigravity.apk`** | `com.agy` | 45157 | Standard production release with original Google account checks. |
+| **`antigravity-region-bypass.apk`** | `com.agy` | 45157 | Region-bypass edition with account eligibility check bypass. |
+| **`SHA256SUMS.txt`** | — | — | Cryptographic SHA-256 checksums for verification. |
+
+## Changes & Fixes (v2.34.22)
+
+### 1. Swarm UI Quick-Open & Background Reply Notifications
+* **Swarm UI Quick-Open Chip:** Add compact **Swarm** quick-open chip in the chat composer toolbar that directly opens/toggles the Swarm UI sidecar pane (works even when the `Open the Swarm UI` link is scrolled out of view; never touches chat input).
+* **Background Assistant Reply Watcher:** Add Background Assistant Reply Watcher in `agent_notify` so new agent/coordinator replies trigger deduplicated Android notifications even while a Swarm conversation stays on "waiting for subagent".
+
+---
+
 # Antigravity for Android v2.34.21
 
 ## Release Packages
