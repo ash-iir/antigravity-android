@@ -1,3 +1,27 @@
+# Antigravity for Android v2.34.20
+
+## Release Packages
+
+| Package | Application ID | Runtime Port | Description |
+| :--- | :--- | :--- | :--- |
+| **`antigravity.apk`** | `com.agy` | 45157 | Standard production release with original Google account checks. |
+| **`antigravity-region-bypass.apk`** | `com.agy` | 45157 | Region-bypass edition with account eligibility check bypass. |
+| **`SHA256SUMS.txt`** | — | — | Cryptographic SHA-256 checksums for verification. |
+
+## Changes & Fixes (v2.34.20)
+
+### 1. Background Agent Notifications & Direct Deep-Link
+* **Reliable Android 13+ Background Alerts:** Requests Android 13+ `POST_NOTIFICATIONS` permission, wires the upstream `window.nativeNotifications` bridge (`send`, `onClicked` -> direct conversation jump, `openSystemPreferences`), syncs `document.hasFocus()` with Android foreground state, and upgrades `CHANNEL_ALERTS` to `IMPORTANCE_HIGH` with sound, vibration, and lockscreen visibility.
+
+### 2. Navigation & Swarm Composer UX
+* **1-Step Header Back Button:** Makes the top-left on-screen `←` header button step back 1 level on nested pages (long-press or top-level still jumps to Home `/`).
+* **Quick `/swarm` Composer Toggle Chip:** Adds a compact theme-matched `/swarm` quick toggle chip in the chat composer toolbar.
+
+### 3. Swarm Graph / Hive GPU Ghosting Fix
+* **Zero WebView Tile Ghosting:** Eliminates Swarm Graph/Hive Android WebView GPU tile ghosting via cached PNG bee `<img>`, integer `left`/`top` positioning, 3 persistent diffed SVG `<g>` layers, and removal of SMIL/infinite compositor animations.
+
+---
+
 # Antigravity for Android v2.34.19
 
 ## Release Packages
