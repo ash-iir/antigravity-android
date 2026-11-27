@@ -8,10 +8,12 @@ if (!global.__AG_AGENT_NOTIFY_INSTALLED__) {
   global.__AG_AGENT_NOTIFY_INSTALLED__ = true;
 
   var lastSentByKey = {};
+  var lastDoneByConv = {};
   var seenNotificationIds = {};
   var seenNotificationQueue = [];
   var MAX_SEEN_IDS = 200;
   var DEBOUNCE_MS = 2500;
+  var DONE_COOLDOWN_MS = 15000;
   var clickListeners = [];
   var pendingClickedConvId = global.__AG_PENDING_NOTIFICATION_CONV_ID__ || null;
 
@@ -94,29 +96,47 @@ if (!global.__AG_AGENT_NOTIFY_INSTALLED__) {
     return false;
   }
 
+  function isUrgentEventType(typeStr) {
+    return typeStr === 'approval' || typeStr === 'action_required' || typeStr === 'request_action';
+  }
+
   function sendNativeAlert(eventType, title, body, conversationId, notificationId, silent) {
     try {
       if (isHostInForeground()) {
-        return;
+        return false;
       }
       var convId = conversationId ? String(conversationId).trim() : '';
       var notifId = notificationId ? String(notificationId).trim() : '';
       if (notifId && rememberNotificationId(notifId)) {
-        return;
+        return false;
       }
 
       var typeStr = String(eventType || 'done');
+      var urgent = isUrgentEventType(typeStr);
       var debounceKey = typeStr + ':' + convId;
+      var convKey = convId || '__active__';
       var now = Date.now();
-      if (lastSentByKey[debounceKey] && (now - lastSentByKey[debounceKey]) < DEBOUNCE_MS) {
-        return;
+      if (urgent) {
+        if (lastSentByKey[debounceKey] && (now - lastSentByKey[debounceKey]) < DEBOUNCE_MS) {
+          return false;
+        }
+      } else {
+        if (lastDoneByConv[convKey] && (now - lastDoneByConv[convKey]) < DONE_COOLDOWN_MS) {
+          return false;
+        }
+        if (lastSentByKey[debounceKey] && (now - lastSentByKey[debounceKey]) < DEBOUNCE_MS) {
+          return false;
+        }
       }
       lastSentByKey[debounceKey] = now;
+      if (!urgent) {
+        lastDoneByConv[convKey] = now;
+      }
 
       var token = global.__AG_NATIVE_BRIDGE_TOKEN__;
       var bridge = getBridge();
       if (!token || !bridge) {
-        return;
+        return false;
       }
       var safeTitle = String(title || 'Antigravity');
       var safeBody = String(body || 'Agent update ready');
@@ -130,13 +150,17 @@ if (!global.__AG_AGENT_NOTIFY_INSTALLED__) {
           notifId,
           Boolean(silent)
         );
+        return true;
       } else if (typeof bridge.notifyAgentEvent === 'function') {
         bridge.notifyAgentEvent(String(token), typeStr, safeTitle, safeBody);
+        return true;
       }
+      return false;
     } catch (e) {
       if (typeof console !== 'undefined' && console.warn) {
         console.warn('[AGY_NOTIFY] dispatch error', e);
       }
+      return false;
     }
   }
 
@@ -255,9 +279,10 @@ if (!global.__AG_AGENT_NOTIFY_INSTALLED__) {
   //    ("Waiting for subagent") instead of transitioning to IDLE, so upstream
   //    window.nativeNotifications.send never fires when the coordinator posts a reply.
   //    While backgrounded, watch [data-testid="conversation-view"] for a new, settled
-  //    assistant reply and dispatch via sendNativeAlert('done', ...) with shared dedupe.
+  //    assistant reply ONLY after the agent stops actively working/generating, and
+  //    dispatch via sendNativeAlert('done', ...) with shared dedupe & 15s cooldown.
   try {
-    var REPLY_SETTLE_MS = 1800;
+    var REPLY_SETTLE_MS = 2500;
     var MUTATION_THROTTLE_MS = 250;
     var BG_POLL_MS = 1500;
     var MAX_SNIPPET_LEN = 180;
@@ -265,10 +290,34 @@ if (!global.__AG_AGENT_NOTIFY_INSTALLED__) {
       '.sr-only',
       '[data-find-ignore]',
       '[aria-hidden="true"]',
+      '[data-side-panel-focus-scope="true"]',
       '[data-testid="live-status-row"]',
+      '[data-testid="live-status-hover"]',
       '[data-testid="idle-status-text"]',
       '[data-testid="turn-cards-container"]',
       '[data-testid="subagent-node"]',
+      '[data-testid="coordinator-worker-card"]',
+      '[data-testid="coordinator-hover-card"]',
+      '[data-testid="running-items-card"]',
+      '[data-testid="inline-card"]',
+      '[data-testid="inline-card-in-chat"]',
+      '[data-testid="inline-permission-card"]',
+      '[data-testid="agent-inline-card-slot"]',
+      '[data-testid="mcp-tool-step"]',
+      '[data-testid="ephemeral-tool-status"]',
+      '[data-testid="tool-group-elapsed"]',
+      '[data-testid="tool-permissions-row"]',
+      '[data-testid="artifact-card"]',
+      '[data-testid="bubble-artifact-card"]',
+      '[data-testid="bubble-artifact-cards"]',
+      '[data-testid="changed-files-card"]',
+      '[data-testid="step-plan"]',
+      '[data-testid="browser-subagent-thinking"]',
+      '[data-testid="browser-subagent-steps"]',
+      '[data-testid="side-question-followup-thinking"]',
+      '[data-testid="side-question-tool-status"]',
+      '[data-testid="agent-loading"]',
+      '[data-testid="status-loading-spinner"]',
       'button',
       'svg',
       'style',
@@ -278,12 +327,19 @@ if (!global.__AG_AGENT_NOTIFY_INSTALLED__) {
       'agent working': true,
       'agent said': true,
       'waiting for subagent': true,
-      'working': true
+      'working': true,
+      'thinking': true,
+      'running': true,
+      'generating': true
     };
+    var ACTIVE_WORK_RE = /\b(working|thinking|running|generating|streaming|planning|searching|reading|editing|executing|analyzing)\b/i;
+    var WAITING_SUBAGENT_RE = /\bwaiting\s+for\b/i;
 
     var bgWatcherActive = false;
     var bgConvId = '';
     var baselineFingerprint = '';
+    var baselineText = '';
+    var lastNotifiedTextByConv = {};
     var pendingFingerprint = '';
     var pendingText = '';
     var settleTimer = null;
@@ -303,6 +359,122 @@ if (!global.__AG_AGENT_NOTIFY_INSTALLED__) {
         h = (h + (h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24)) >>> 0;
       }
       return h.toString(36);
+    }
+
+    function isInsideSidePanel(node) {
+      if (!node) return false;
+      try {
+        if (typeof node.closest === 'function') {
+          return Boolean(node.closest('[data-side-panel-focus-scope="true"]'));
+        }
+        var cur = node.parentNode || node.parentElement;
+        while (cur) {
+          if (typeof cur.getAttribute === 'function' && cur.getAttribute('data-side-panel-focus-scope') === 'true') {
+            return true;
+          }
+          cur = cur.parentNode || cur.parentElement;
+        }
+      } catch (ignored) {}
+      return false;
+    }
+
+    function isDisabledControl(el) {
+      if (!el) return true;
+      if (el.disabled) return true;
+      try {
+        if (typeof el.getAttribute === 'function') {
+          if (el.getAttribute('disabled') !== null) return true;
+          if (el.getAttribute('aria-disabled') === 'true') return true;
+        }
+      } catch (ignored) {}
+      return false;
+    }
+
+    function isStopOrCancelButton(btn) {
+      if (!btn || isDisabledControl(btn) || isInsideSidePanel(btn)) {
+        return false;
+      }
+      try {
+        var testId = (typeof btn.getAttribute === 'function' && btn.getAttribute('data-testid')) || '';
+        if (testId === 'input-cancel-button') return true;
+        if (/^(input-)?(stop|cancel)(-generation|-button)?$/i.test(testId)) return true;
+        var aria = (typeof btn.getAttribute === 'function' && btn.getAttribute('aria-label')) || '';
+        if (/^(stop|cancel)\b/i.test(normalizeText(aria))) return true;
+        var title = (typeof btn.getAttribute === 'function' && btn.getAttribute('title')) || '';
+        if (/^(stop|cancel)\b/i.test(normalizeText(title))) return true;
+      } catch (ignored) {}
+      return false;
+    }
+
+    function isAgentActivelyWorking(container) {
+      try {
+        // 1. Check composer / document for an active Stop / Cancel generation button.
+        var root = (typeof document !== 'undefined') ? document : container;
+        if (root && typeof root.querySelectorAll === 'function') {
+          var cancelBtns = root.querySelectorAll('[data-testid="input-cancel-button"]');
+          for (var c = 0; c < cancelBtns.length; c++) {
+            if (isStopOrCancelButton(cancelBtns[c])) return true;
+          }
+          var composers = root.querySelectorAll('[data-agent-composer-root]');
+          for (var r = 0; r < composers.length; r++) {
+            var comp = composers[r];
+            if (!comp || isInsideSidePanel(comp) || typeof comp.querySelectorAll !== 'function') continue;
+            var compBtns = comp.querySelectorAll('button');
+            for (var b = 0; b < compBtns.length; b++) {
+              if (isStopOrCancelButton(compBtns[b])) return true;
+            }
+          }
+        }
+
+        var scope = container || getConversationView();
+        if (!scope || typeof scope.querySelectorAll !== 'function') {
+          return false;
+        }
+
+        // 2. Check latest agent-response heading ("Agent working" vs "Agent said").
+        var responses = scope.querySelectorAll('[data-testid="agent-response"]');
+        var latestResp = null;
+        for (var ri = responses.length - 1; ri >= 0; ri--) {
+          if (responses[ri] && !isInsideSidePanel(responses[ri])) {
+            latestResp = responses[ri];
+            break;
+          }
+        }
+        if (latestResp && typeof latestResp.querySelectorAll === 'function') {
+          var headings = latestResp.querySelectorAll('h6');
+          for (var hi = 0; hi < headings.length; hi++) {
+            if (normalizeText(headings[hi].textContent).toLowerCase() === 'agent working') {
+              return true;
+            }
+          }
+          // Explicit loading / streaming indicators inside latest agent-response.
+          var loaders = latestResp.querySelectorAll('[data-testid="agent-loading"], [data-testid="status-loading-spinner"], [data-streaming="true"]');
+          for (var li = 0; li < loaders.length; li++) {
+            if (loaders[li] && !isInsideSidePanel(loaders[li])) {
+              return true;
+            }
+          }
+        }
+
+        // 3. Check live-status-row: active working/thinking/running blocks notification,
+        //    while "Waiting for subagent" (with no Stop button) is explicitly allowed!
+        var statusRows = scope.querySelectorAll('[data-testid="live-status-row"]');
+        for (var si = 0; si < statusRows.length; si++) {
+          var row = statusRows[si];
+          if (!row || isInsideSidePanel(row)) continue;
+          var statusText = normalizeText(row.textContent).toLowerCase();
+          if (statusText && WAITING_SUBAGENT_RE.test(statusText)) {
+            continue;
+          }
+          if (typeof row.querySelector === 'function' && row.querySelector('[data-testid="live-status-hover"]')) {
+            return true;
+          }
+          if (statusText && ACTIVE_WORK_RE.test(statusText)) {
+            return true;
+          }
+        }
+      } catch (ignored) {}
+      return false;
     }
 
     function getConversationView() {
@@ -361,7 +533,14 @@ if (!global.__AG_AGENT_NOTIFY_INSTALLED__) {
 
     function isIgnoredStatusOnly(text) {
       if (!text) return true;
-      return Boolean(IGNORED_STATUS_TEXT[text.toLowerCase()]);
+      var lower = text.toLowerCase();
+      if (IGNORED_STATUS_TEXT[lower]) return true;
+      if (WAITING_SUBAGENT_RE.test(lower) && lower.length < 48) return true;
+      return false;
+    }
+
+    function makeTextFingerprint(kind, text) {
+      return kind + ':' + text.length + ':' + simpleHash(text);
     }
 
     function readLatestAssistantReply(viewEl) {
@@ -375,11 +554,11 @@ if (!global.__AG_AGENT_NOTIFY_INSTALLED__) {
       if (bubbles && bubbles.length > 0) {
         for (var i = bubbles.length - 1; i >= 0; i--) {
           var b = bubbles[i];
+          if (!b || isInsideSidePanel(b)) continue;
           var bText = extractCleanText(b);
           if (!isIgnoredStatusOnly(bText)) {
-            var stepIdx = (typeof b.getAttribute === 'function' && b.getAttribute('data-step-index')) || '';
             return {
-              fingerprint: 'bubble:' + bubbles.length + ':' + i + ':' + stepIdx + ':' + bText.length + ':' + simpleHash(bText),
+              fingerprint: makeTextFingerprint('bubble', bText),
               text: bText
             };
           }
@@ -392,8 +571,13 @@ if (!global.__AG_AGENT_NOTIFY_INSTALLED__) {
       if (!responses || responses.length === 0) {
         return empty;
       }
-      var lastIdx = responses.length - 1;
-      var lastResp = responses[lastIdx];
+      var lastResp = null;
+      for (var ri = responses.length - 1; ri >= 0; ri--) {
+        if (responses[ri] && !isInsideSidePanel(responses[ri])) {
+          lastResp = responses[ri];
+          break;
+        }
+      }
       if (!lastResp) {
         return empty;
       }
@@ -417,7 +601,7 @@ if (!global.__AG_AGENT_NOTIFY_INSTALLED__) {
           var joined = normalizeText(parts.join(' '));
           if (!isIgnoredStatusOnly(joined)) {
             return {
-              fingerprint: 'md:' + responses.length + ':' + mdBlocks.length + ':' + joined.length + ':' + simpleHash(joined),
+              fingerprint: makeTextFingerprint('md', joined),
               text: joined
             };
           }
@@ -428,7 +612,7 @@ if (!global.__AG_AGENT_NOTIFY_INSTALLED__) {
       var fallbackText = extractCleanText(lastResp);
       if (!isIgnoredStatusOnly(fallbackText)) {
         return {
-          fingerprint: 'resp:' + responses.length + ':' + fallbackText.length + ':' + simpleHash(fallbackText),
+          fingerprint: makeTextFingerprint('resp', fallbackText),
           text: fallbackText
         };
       }
@@ -471,6 +655,7 @@ if (!global.__AG_AGENT_NOTIFY_INSTALLED__) {
       bgWatcherActive = false;
       bgConvId = '';
       baselineFingerprint = '';
+      baselineText = '';
       clearPendingReply();
       detachObserver();
       if (throttleTimer !== null && typeof clearTimeout === 'function') {
@@ -490,15 +675,28 @@ if (!global.__AG_AGENT_NOTIFY_INSTALLED__) {
         return;
       }
       var viewEl = getConversationView();
+      if (isAgentActivelyWorking(viewEl)) {
+        clearPendingReply();
+        return;
+      }
       var convId = getActiveConversationId(viewEl);
+      var convKey = convId || '__active__';
       if (convId !== bgConvId) {
         bgConvId = convId;
-        baselineFingerprint = readLatestAssistantReply(viewEl).fingerprint;
+        var switchedSnap = readLatestAssistantReply(viewEl);
+        baselineFingerprint = switchedSnap.fingerprint;
+        baselineText = switchedSnap.text;
         clearPendingReply();
         return;
       }
       var snap = readLatestAssistantReply(viewEl);
-      if (!snap.text || snap.fingerprint === baselineFingerprint) {
+      if (!snap.text || snap.fingerprint === baselineFingerprint || snap.text === baselineText) {
+        clearPendingReply();
+        return;
+      }
+      if (lastNotifiedTextByConv[convKey] && snap.text === lastNotifiedTextByConv[convKey]) {
+        baselineFingerprint = snap.fingerprint;
+        baselineText = snap.text;
         clearPendingReply();
         return;
       }
@@ -511,16 +709,21 @@ if (!global.__AG_AGENT_NOTIFY_INSTALLED__) {
         return;
       }
 
-      // Reply has settled: update baseline first so this reply can never fire twice.
+      // Reply has settled and agent is no longer actively working:
+      // update baseline & lastNotifiedText first so this reply can never fire twice.
       baselineFingerprint = snap.fingerprint;
+      baselineText = snap.text;
       var fullText = snap.text;
       clearPendingReply();
 
       var snippet = fullText.length > MAX_SNIPPET_LEN
         ? (fullText.slice(0, MAX_SNIPPET_LEN - 3).trim() + '...')
         : fullText;
-      var dedupeKey = 'bg-reply-' + (convId || 'active') + '-' + simpleHash(baselineFingerprint);
-      sendNativeAlert('done', 'Antigravity', snippet, convId, dedupeKey, false);
+      var dedupeKey = 'bg-reply-' + (convId || 'active') + '-' + simpleHash(fullText);
+      var sent = sendNativeAlert('done', 'Antigravity', snippet, convId, dedupeKey, false);
+      if (sent) {
+        lastNotifiedTextByConv[convKey] = fullText;
+      }
     }
 
     function checkForBackgroundReply() {
@@ -534,17 +737,33 @@ if (!global.__AG_AGENT_NOTIFY_INSTALLED__) {
         attachObserver(viewEl);
       }
       var convId = getActiveConversationId(viewEl);
+      var convKey = convId || '__active__';
       if (convId !== bgConvId) {
         bgConvId = convId;
-        baselineFingerprint = readLatestAssistantReply(viewEl).fingerprint;
+        var switchedSnap = readLatestAssistantReply(viewEl);
+        baselineFingerprint = switchedSnap.fingerprint;
+        baselineText = switchedSnap.text;
         clearPendingReply();
         return;
       }
+      // Never settle or notify while agent is actively generating/working.
+      if (isAgentActivelyWorking(viewEl)) {
+        if (pendingFingerprint || settleTimer !== null) {
+          clearPendingReply();
+        }
+        return;
+      }
       var snap = readLatestAssistantReply(viewEl);
-      if (!snap.text || snap.fingerprint === baselineFingerprint) {
+      if (!snap.text || snap.fingerprint === baselineFingerprint || snap.text === baselineText) {
         if (pendingFingerprint) {
           clearPendingReply();
         }
+        return;
+      }
+      if (lastNotifiedTextByConv[convKey] && snap.text === lastNotifiedTextByConv[convKey]) {
+        baselineFingerprint = snap.fingerprint;
+        baselineText = snap.text;
+        clearPendingReply();
         return;
       }
       if (snap.fingerprint !== pendingFingerprint) {
@@ -576,7 +795,9 @@ if (!global.__AG_AGENT_NOTIFY_INSTALLED__) {
       var viewEl = getConversationView();
       bgWatcherActive = true;
       bgConvId = getActiveConversationId(viewEl);
-      baselineFingerprint = readLatestAssistantReply(viewEl).fingerprint;
+      var initSnap = readLatestAssistantReply(viewEl);
+      baselineFingerprint = initSnap.fingerprint;
+      baselineText = initSnap.text;
       clearPendingReply();
       attachObserver(viewEl);
       if (bgPollTimer === null && typeof setInterval === 'function') {
@@ -587,6 +808,8 @@ if (!global.__AG_AGENT_NOTIFY_INSTALLED__) {
     function syncForegroundWatcher() {
       if (isHostInForeground()) {
         if (bgWatcherActive) {
+          var fgConvKey = bgConvId || '__active__';
+          delete lastNotifiedTextByConv[fgConvKey];
           stopBackgroundWatcher();
         }
       } else {
@@ -598,6 +821,8 @@ if (!global.__AG_AGENT_NOTIFY_INSTALLED__) {
 
     onForegroundFlagChanged = function (inFg) {
       if (inFg) {
+        var fgConvKey = bgConvId || '__active__';
+        delete lastNotifiedTextByConv[fgConvKey];
         stopBackgroundWatcher();
       } else {
         startBackgroundWatcher();
@@ -609,7 +834,12 @@ if (!global.__AG_AGENT_NOTIFY_INSTALLED__) {
       var viewEl = getConversationView();
       var activeConvId = getActiveConversationId(viewEl);
       if (!convId || !activeConvId || String(convId) === activeConvId) {
-        baselineFingerprint = readLatestAssistantReply(viewEl).fingerprint;
+        var snap = readLatestAssistantReply(viewEl);
+        baselineFingerprint = snap.fingerprint;
+        baselineText = snap.text;
+        if (snap.text) {
+          lastNotifiedTextByConv[activeConvId || '__active__'] = snap.text;
+        }
         clearPendingReply();
       }
     };

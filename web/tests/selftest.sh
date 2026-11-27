@@ -1458,6 +1458,286 @@ assert.deepStrictEqual(clicked, ['conv-cold', 'conv-warm'], 'warm click must rou
 
 sandbox.nativeNotifications.openSystemPreferences();
 assert.deepStrictEqual(settingsCalls, ['notify-tok'], 'openSystemPreferences must forward token');
+
+// 5. Per-conversation 15s cooldown for 'done' vs immediate 'action_required'/'approval'.
+{
+  let fakeNow = 100000;
+  const RealDate = Date;
+  function FakeDate(...args) {
+    return args.length ? new RealDate(...args) : new RealDate(fakeNow);
+  }
+  FakeDate.now = () => fakeNow;
+
+  const timers = new Map();
+  let nextTimerId = 1;
+  function fakeSetTimeout(fn, ms) {
+    const id = nextTimerId++;
+    timers.set(id, { fn, due: fakeNow + (ms || 0), interval: null });
+    return id;
+  }
+  function fakeClearTimeout(id) {
+    timers.delete(id);
+  }
+  function fakeSetInterval(fn, ms) {
+    const id = nextTimerId++;
+    timers.set(id, { fn, due: fakeNow + (ms || 0), interval: ms || 0 });
+    return id;
+  }
+  function fakeClearInterval(id) {
+    timers.delete(id);
+  }
+  function advanceTime(ms) {
+    const target = fakeNow + ms;
+    while (true) {
+      let earliestId = null;
+      let earliest = null;
+      for (const [id, t] of timers.entries()) {
+        if (t.due <= target && (!earliest || t.due < earliest.due)) {
+          earliest = t;
+          earliestId = id;
+        }
+      }
+      if (!earliest) break;
+      fakeNow = earliest.due;
+      if (earliest.interval !== null) {
+        earliest.due = fakeNow + earliest.interval;
+      } else {
+        timers.delete(earliestId);
+      }
+      earliest.fn();
+    }
+    fakeNow = target;
+  }
+
+  function makeDomEl(tag, attrs = {}, text = '') {
+    const attrMap = new Map(Object.entries(attrs));
+    const el = {
+      tagName: String(tag).toUpperCase(),
+      className: attrs.class || '',
+      disabled: Boolean(attrs.disabled),
+      parentNode: null,
+      parentElement: null,
+      children: [],
+      _text: text,
+      get textContent() {
+        if (this.children.length === 0) return this._text;
+        return this._text + this.children.map((c) => c.textContent).join(' ');
+      },
+      set textContent(v) {
+        this._text = String(v || '');
+        this.children = [];
+      },
+      getAttribute(k) {
+        return attrMap.has(k) ? String(attrMap.get(k)) : null;
+      },
+      setAttribute(k, v) {
+        attrMap.set(k, String(v));
+        if (k === 'class') this.className = String(v);
+      },
+      hasAttribute(k) {
+        return attrMap.has(k);
+      },
+      appendChild(child) {
+        child.parentNode = this;
+        child.parentElement = this;
+        this.children.push(child);
+        return child;
+      },
+      removeChild(child) {
+        const idx = this.children.indexOf(child);
+        if (idx >= 0) {
+          this.children.splice(idx, 1);
+          child.parentNode = null;
+          child.parentElement = null;
+        }
+        return child;
+      },
+      cloneNode(deep) {
+        const copyAttrs = {};
+        for (const [k, v] of attrMap.entries()) copyAttrs[k] = v;
+        if (this.disabled) copyAttrs.disabled = true;
+        const copy = makeDomEl(this.tagName, copyAttrs, this._text);
+        if (deep) {
+          for (const ch of this.children) copy.appendChild(ch.cloneNode(true));
+        }
+        return copy;
+      },
+      closest(sel) {
+        let cur = this;
+        while (cur) {
+          if (matchesSel(cur, sel)) return cur;
+          cur = cur.parentNode;
+        }
+        return null;
+      },
+      querySelector(sel) {
+        return this.querySelectorAll(sel)[0] || null;
+      },
+      querySelectorAll(sel) {
+        const out = [];
+        const parts = sel.split(',').map((s) => s.trim()).filter(Boolean);
+        function walk(node) {
+          for (const ch of node.children) {
+            if (parts.some((p) => matchesSel(ch, p))) out.push(ch);
+            walk(ch);
+          }
+        }
+        walk(this);
+        return out;
+      }
+    };
+    return el;
+  }
+
+  function matchesSimple(el, sel) {
+    if (sel === 'button') return el.tagName === 'BUTTON';
+    if (sel === 'h6') return el.tagName === 'H6';
+    if (sel === 'svg') return el.tagName === 'SVG';
+    if (sel === 'style') return el.tagName === 'STYLE';
+    if (sel === 'script') return el.tagName === 'SCRIPT';
+    if (sel === '.sr-only') return el.className.split(/\s+/).includes('sr-only');
+    if (sel.startsWith('[') && sel.endsWith(']')) {
+      const inner = sel.slice(1, -1);
+      const eq = inner.indexOf('=');
+      if (eq < 0) return el.hasAttribute(inner);
+      const k = inner.slice(0, eq).trim();
+      const v = inner.slice(eq + 1).trim().replace(/^["']|["']$/g, '');
+      return el.getAttribute(k) === v;
+    }
+    return false;
+  }
+
+  function matchesSel(el, sel) {
+    const tokens = sel.split(/\s+/).filter(Boolean);
+    if (tokens.length === 1) return matchesSimple(el, tokens[0]);
+    if (!matchesSimple(el, tokens[tokens.length - 1])) return false;
+    let cur = el.parentNode;
+    let idx = tokens.length - 2;
+    while (cur && idx >= 0) {
+      if (matchesSimple(cur, tokens[idx])) idx--;
+      cur = cur.parentNode;
+    }
+    return idx < 0;
+  }
+
+  const body = makeDomEl('body');
+  const convView = makeDomEl('div', { 'data-testid': 'conversation-view', 'data-cascade-id': 'conv-bg-1' });
+  const composer = makeDomEl('div', { 'data-agent-composer-root': '' });
+  const stopBtn = makeDomEl('button', { 'data-testid': 'input-cancel-button', 'aria-label': 'Cancel (Ctrl+D)' });
+  composer.appendChild(stopBtn);
+  body.appendChild(convView);
+  body.appendChild(composer);
+
+  // Initial baseline reply before going to background
+  const resp1 = makeDomEl('div', { 'data-testid': 'agent-response' });
+  const h6_1 = makeDomEl('h6', { class: 'sr-only', 'data-find-ignore': 'true' }, 'Agent said');
+  const bubble1 = makeDomEl('div', { 'data-bubble-side': 'agent' }, 'Initial baseline reply');
+  resp1.appendChild(h6_1);
+  resp1.appendChild(bubble1);
+  convView.appendChild(resp1);
+
+  const bgCalls = [];
+  let bgFg = false;
+  const bgDoc = {
+    body,
+    documentElement: body,
+    visibilityState: 'hidden',
+    hasFocus: () => false,
+    addEventListener() {},
+    querySelector: (s) => body.querySelector(s),
+    querySelectorAll: (s) => body.querySelectorAll(s)
+  };
+  const bgSandbox = {
+    console,
+    Date: FakeDate,
+    setTimeout: fakeSetTimeout,
+    clearTimeout: fakeClearTimeout,
+    setInterval: fakeSetInterval,
+    clearInterval: fakeClearInterval,
+    __AG_NATIVE_BRIDGE_TOKEN__: 'bg-tok',
+    __AG_HOST_IN_FOREGROUND__: false,
+    Android: {
+      isInForeground: () => bgFg,
+      notifyAgentEventRich: (tok, type, title, bodyText, convId, notifId, silent) => {
+        bgCalls.push({ tok, type, title, body: bodyText, convId, notifId, silent });
+      }
+    },
+    document: bgDoc,
+    location: { pathname: '/c/conv-bg-1', search: '' },
+    addEventListener() {}
+  };
+  bgSandbox.window = bgSandbox;
+  bgSandbox.self = bgSandbox;
+  bgSandbox.globalThis = bgSandbox;
+  vm.runInNewContext(code, bgSandbox);
+
+  // Agent starts working on a new turn: Stop button is present + live-status-row says "Working" + intermediate text appears.
+  const resp2 = makeDomEl('div', { 'data-testid': 'agent-response' });
+  const h6_2 = makeDomEl('h6', { class: 'sr-only', 'data-find-ignore': 'true' }, 'Agent working');
+  const bubble2 = makeDomEl('div', { 'data-bubble-side': 'agent' }, 'Working on step 1...');
+  const toolStep = makeDomEl('div', { 'data-testid': 'mcp-tool-step' }, 'Running tool foo');
+  const liveRow = makeDomEl('div', { 'data-testid': 'live-status-row' }, 'Working');
+  bubble2.appendChild(toolStep);
+  resp2.appendChild(h6_2);
+  resp2.appendChild(bubble2);
+  resp2.appendChild(liveRow);
+  convView.appendChild(resp2);
+
+  // Even after 4000ms (> 3000ms), NO notification must fire while Stop button / working status is present!
+  advanceTime(4000);
+  assert.strictEqual(bgCalls.length, 0, 'must NOT notify while Stop button / active working indicator is present');
+
+  // Remove Stop button, keep live-status-row saying "Thinking..." -> still actively working, must NOT notify!
+  composer.removeChild(stopBtn);
+  h6_2.textContent = 'Agent said';
+  liveRow.textContent = 'Thinking';
+  advanceTime(4000);
+  assert.strictEqual(bgCalls.length, 0, 'must NOT notify while live-status-row says Thinking');
+
+  // Agent finishes its own turn and parks in Swarm ("Waiting for subagent") with final reply text!
+  liveRow.textContent = 'Waiting for subagent';
+  bubble2._text = 'All done with your build! Ready to test.';
+  // Wait 2000ms (< 2500ms settle): must NOT have fired yet.
+  advanceTime(2000);
+  assert.strictEqual(bgCalls.length, 0, 'must wait for >= 2500ms settle after working stops');
+
+  // Advance another 2500ms -> fires ONCE with clean reply text (excluding tool step)!
+  advanceTime(2500);
+  assert.strictEqual(bgCalls.length, 1, 'must fire ONCE after working stops and reply settles');
+  assert.strictEqual(bgCalls[0].type, 'done');
+  assert.strictEqual(bgCalls[0].convId, 'conv-bg-1');
+  assert.strictEqual(bgCalls[0].body, 'All done with your build! Ready to test.');
+
+  // Minor DOM re-render (e.g. adding a subagent status card) with same reply text must NEVER re-fire even after 20s!
+  const subCard = makeDomEl('div', { 'data-testid': 'subagent-node' }, 'worker-1 status updated');
+  resp2.appendChild(subCard);
+  advanceTime(20000);
+  assert.strictEqual(bgCalls.length, 1, 'same reply or subagent card DOM re-render must NEVER re-fire');
+
+  // Cooldown check: upstream 'done' within 15s of previous 'done' is suppressed, while 'approval' fires immediately.
+  bgSandbox.nativeNotifications.send({
+    id: 'agent-finished-conv-bg-1-99',
+    title: 'Done',
+    body: 'First upstream done',
+    payload: { cascadeId: 'conv-bg-1' }
+  });
+  assert.strictEqual(bgCalls.length, 2, 'upstream done after 20s cooldown should fire');
+  advanceTime(5000);
+  bgSandbox.nativeNotifications.send({
+    id: 'agent-finished-conv-bg-1-100',
+    title: 'Done',
+    body: 'Second upstream done within 15s',
+    payload: { cascadeId: 'conv-bg-1' }
+  });
+  assert.strictEqual(bgCalls.length, 2, 'second done within 15s per-conversation cooldown must be suppressed');
+  bgSandbox.nativeNotifications.send({
+    id: 'perm-101',
+    title: 'Permission',
+    body: 'Approve command?',
+    payload: { cascadeId: 'conv-bg-1', type: 'approval' }
+  });
+  assert.strictEqual(bgCalls.length, 3, 'approval notification must bypass 15s done cooldown');
+}
 EOF
 
     # Behavioral test: swarm_pane_chip injects a compact Swarm chip into
