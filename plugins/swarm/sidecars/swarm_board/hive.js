@@ -108,6 +108,7 @@
   // Nudge each bee onto the device pixel grid so the sprites stay crisp. Reads
   // all positions first (without the previous nudge), then writes.
   function snapBees(root){
+    if(root.querySelector('.hv')) return;
     const dpr=window.devicePixelRatio||1;
     const boxes=[...root.querySelectorAll('.beebox')];
     const rects=boxes.map(b=>{ const r=b.getBoundingClientRect(); const m=/translate\(([-\d.]+)px,\s*([-\d.]+)px\)/.exec(b.style.transform||''); return {x:r.left-(m?+m[1]:0), y:r.top-(m?+m[2]:0)}; });
@@ -1114,7 +1115,7 @@
      dashes run from a waiting bee to whoever it waits on, and a beam marks the
      newest post. Stepping back through the board (opts.seq) works each bee's
      state out from the posts up to that point. */
-  const HV = {host: null, root: null, key: '', swarm: null, beam: null, ro: null, args: null};
+  const HV = {host: null, root: null, key: '', swarm: null, beam: null, ro: null, roRaf: 0, args: null, svgHtml: '', sumHtml: '', stageW: 0, stageH: 0};
   const HV_RING = [[0,-1],[1,-1],[1,0],[0,1],[-1,1],[-1,0]];
   // Which ring-one slots a few cells take, so two or three cells sit balanced around the middle.
   const HV_FEW = {1:[0], 2:[5,1], 3:[0,2,4], 4:[5,1,4,2], 5:[5,0,1,4,2]};
@@ -1296,48 +1297,70 @@
     const tally = k => cells.filter(c => agg(c) === k).length, doneT = cells.filter(c => !agg(c) && c.total && c.done >= c.total).length;
     const many = cells.length > 18;
     sum.hidden = !many;
-    if (many) sum.innerHTML = `<span><b>${cells.length}</b> thread${cells.length === 1 ? '' : 's'}</span>` +
-        [['busy', 'working'], ['warn', 'waiting'], ['bad', 'stuck']].map(([k, l]) => tally(k) ? `<span class="${k}"><i></i>${tally(k)} ${l}</span>` : '').join('') + (doneT ? `<span class="ok"><i></i>${doneT} done</span>` : '');
-    root.querySelector('.hv').dataset.size = mode;
-    stage.style.height = H + 'px';
-    stage.style.width = CW + 'px';
-    svg.setAttribute('viewBox', `0 0 ${CW} ${H}`);
+    const sumHtml = many
+        ? `<span><b>${cells.length}</b> thread${cells.length === 1 ? '' : 's'}</span>` +
+          [['busy', 'working'], ['warn', 'waiting'], ['bad', 'stuck']].map(([k, l]) => tally(k) ? `<span class="${k}"><i></i>${tally(k)} ${l}</span>` : '').join('') + (doneT ? `<span class="ok"><i></i>${doneT} done</span>` : '')
+        : '';
+    if (many && HV.sumHtml !== sumHtml) { HV.sumHtml = sumHtml; sum.innerHTML = sumHtml; }
+    const hvEl = root.querySelector('.hv');
+    if (hvEl.dataset.size !== mode) hvEl.dataset.size = mode;
+    if (HV.stageH !== H) { HV.stageH = H; stage.style.height = H + 'px'; }
+    if (HV.stageW !== CW) { HV.stageW = CW; stage.style.width = CW + 'px'; }
+    const vb = `0 0 ${CW} ${H}`;
+    if (svg.getAttribute('viewBox') !== vb) svg.setAttribute('viewBox', vb);
     // Zoomed in, the map keeps its place on the page and scrolls inside it.
     const zoomed = HV.zoom > 1.001, f = HV.focus; HV.focus = null;
     view.classList.toggle('zoomed', zoomed);
-    view.style.height = zoomed ? Math.max(320, Math.min(Math.ceil(spanY * (Rfit + gap / 2) + 8), window.innerHeight - 160)) + 'px' : '';
+    const viewH = zoomed ? Math.max(320, Math.min(Math.ceil(spanY * (Rfit + gap / 2) + 8), window.innerHeight - 160)) + 'px' : '';
+    if (view.style.height !== viewH) view.style.height = viewH;
     // A centred zoom centres on the scroll box as it is now, after it took its zoomed size.
     if (zoomed && f) { view.scrollLeft = ox + f.u * G - (f.ax ?? view.clientWidth / 2); view.scrollTop = oy + f.v * G - (f.ay ?? view.clientHeight / 2); }
     HV.geo = {ox, oy, G, units: [[0, 0], ...slots.map(([q, r]) => [ux(q), uy(q, r)])]};
     const zg = root.querySelector('.hv-zoom'), [zOut, zIn, zFit] = zg.querySelectorAll('button');
     zg.hidden = zmax < 1.15; zOut.disabled = zFit.disabled = !zoomed; zIn.disabled = HV.zoom > zmax - .001;
-    root.querySelector('.hv').classList.toggle('can-zoom', zmax >= 1.15 && mode !== 'full');
+    hvEl.classList.toggle('can-zoom', zmax >= 1.15 && mode !== 'full');
     // Bees jump with the map on a zoom, and fly only when they change cells.
     if (HV.lastZoom !== HV.zoom) { const j = HV.jump = (HV.jump || 0) + 1; layer.classList.add('jump'); requestAnimationFrame(() => requestAnimationFrame(() => { if (j === HV.jump) layer.classList.remove('jump'); })); HV.lastZoom = HV.zoom; }
     svg.classList.toggle('fresh', fresh);
     HV.beam = beam ? beam.s : null;
-    svg.innerHTML = cellSvg + selSvg + lines + textSvg;
-    // Animations added through innerHTML start on the document clock (long past), so start them here.
-    svg.querySelectorAll('.hv-fly').forEach(a => { const c = a.parentNode; c.style.opacity = 0; a.beginElement && a.beginElement(); requestAnimationFrame(() => { c.style.opacity = ''; }); });
+    const svgHtml = cellSvg + selSvg + lines + textSvg;
+    if (HV.svgHtml !== svgHtml || fresh || svg.childElementCount === 0) {
+      HV.svgHtml = svgHtml;
+      svg.innerHTML = svgHtml;
+      // Animations added through innerHTML start on the document clock (long past), so start them here.
+      svg.querySelectorAll('.hv-fly').forEach(a => { const c = a.parentNode; c.style.opacity = 0; a.beginElement && a.beginElement(); requestAnimationFrame(() => { c.style.opacity = ''; }); });
+    }
     layer.classList.toggle('names', names);
     // Bees keep their element from one draw to the next, so they fly to a new cell.
     const label = s => ({working: s.who ? `Working for @${s.who}` : 'Working', wait: `Waiting on @${s.who}`, needs: ui('needs'), issue: 'Stuck', done: 'Done', idle: 'Resting', retired: 'Retired', unborn: 'Not started'}[s.st]);
-    const have = new Map([...layer.children].map(b => [b.dataset.n, b]));
+    const have = new Map();
+    for (const child of layer.children) {
+      const k = child.dataset.n;
+      if (k && !have.has(k)) have.set(k, child);
+    }
+    const kept = new Set();
     Object.keys(pos).forEach(n => { const x = sc.members[n], s = hs.st[n]; if (!x || !s || tucked.has(n)) return;
       let b = have.get(n);
       if (!b) { b = document.createElement('button'); b.type = 'button'; b.className = 'hv-bee'; b.dataset.n = n;
         b.innerHTML = `${spriteTag(n, 'landed')}<i class="hv-dot"></i><span class="hv-nm">${esc(n)}</span>`; layer.appendChild(b); }
-      have.delete(n);
+      kept.add(b);
       const queen = n === 'coordinator', art = s.st === 'working' ? 'working' : s.st === 'wait' ? 'waiting_on' : 'landed', size = pos[n].size;
       if (b.dataset.art !== art) { b.dataset.art = art; b.querySelectorAll('.beebox, .beewrap').forEach(e => { e.dataset.state = art; }); paintSprites(b); }
-      b.className = `hv-bee ${s.st} sz-${size}${queen ? ' q' : ''}`;
-      b.tabIndex = s.st === 'unborn' ? -1 : 0; b.setAttribute('aria-hidden', String(s.st === 'unborn'));
+      const cls = `hv-bee ${s.st} sz-${size}${queen ? ' q' : ''}`;
+      if (b.className !== cls) b.className = cls;
+      const tabIdx = s.st === 'unborn' ? -1 : 0;
+      if (b.tabIndex !== tabIdx) b.tabIndex = tabIdx;
+      const hiddenStr = String(s.st === 'unborn');
+      if (b.getAttribute('aria-hidden') !== hiddenStr) b.setAttribute('aria-hidden', hiddenStr);
       const [w, h] = {q: [66, 54], m: [44, 36], xs: [22, 18]}[size];
-      b.style.transform = `translate(${Math.round(pos[n].x - w / 2)}px,${Math.round(pos[n].y - h / 2)}px)`;
+      const tf = `translate(${Math.round(pos[n].x - w / 2)}px, ${Math.round(pos[n].y - h / 2)}px)`;
+      if (b.dataset.tf !== tf) { b.dataset.tf = tf; b.style.transform = tf; }
       const what = label(s);
       const tip = `@${n}${x.title && !queen ? ' · ' + x.title : ''}${what ? ' · ' + what : ''}`;
-      b.title = tip; b.setAttribute('aria-label', tip); });
-    have.forEach(b => b.remove());
+      if (b.title !== tip) { b.title = tip; b.setAttribute('aria-label', tip); } });
+    for (const child of [...layer.children]) {
+      if (!kept.has(child)) child.remove();
+    }
     const card = root.querySelector('.hv-card');
     card.hidden = !selC;
     const cardHtml = !selC ? '' : `<div class="hv-ch"><div class="hv-cht"><b>${esc(selC.title)}</b>${selC.goal ? `<span>${esc(selC.goal)}</span>` : ''}</div>` +
@@ -1368,7 +1391,8 @@
     if (HV.host !== el || !HV.root || !HV.root.isConnected || HV.swarm !== snap.id) {
       el.innerHTML = `<div class="pane embedded"><div class="o2 hv"><div class="hv-bar"><div class="hv-sum" hidden></div><div class="btn-group hv-zoom" role="group" aria-label="Zoom" hidden><button type="button" class="icon-btn" data-hvz="out" title="Zoom out" aria-label="Zoom out"><svg class="icon" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8h9"/></svg></button><button type="button" class="icon-btn" data-hvz="in" title="Zoom in" aria-label="Zoom in"><svg class="icon" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8h9M8 3.5v9"/></svg></button><button type="button" class="icon-btn" data-hvz="fit" title="Fit the whole swarm" aria-label="Fit the whole swarm"><svg class="icon" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 6V3h3M10 3h3v3M13 10v3h-3M6 13H3v-3"/></svg></button></div></div><div class="hv-view"><div class="hv-stage"><svg class="hv-svg" role="img" aria-label="Where each worker is, by thread"></svg><div class="hv-bees"></div></div></div>
         <div class="hv-key" aria-hidden="true"><span><i class="hv-kd"></i>Tasks done</span><span><i class="hv-km"></i>Message just sent</span><span><i class="hv-kw"></i>Waiting on</span><span class="hv-tk"><i class="hv-sw busy"></i>Working</span><span class="hv-tk"><i class="hv-sw warn"></i>Waiting</span><span class="hv-tk"><i class="hv-sw ok"></i>Done</span></div><section class="hv-card" aria-live="polite" hidden></section></div></div>`;
-      Object.assign(HV, {host: el, root: el.firstElementChild, key: '', swarm: snap.id, beam: null, zoom: 1, zmax: 1, focus: null, geo: null, lastZoom: 1, dragged: false, sel: null, cellIds: [], cardHtml: null});
+      if (HV.roRaf) { cancelAnimationFrame(HV.roRaf); HV.roRaf = 0; }
+      Object.assign(HV, {host: el, root: el.firstElementChild, key: '', swarm: snap.id, beam: null, zoom: 1, zmax: 1, focus: null, geo: null, lastZoom: 1, dragged: false, sel: null, cellIds: [], cardHtml: null, svgHtml: '', sumHtml: '', stageW: 0, stageH: 0, roRaf: 0});
       const redraw = () => { try { hiveDraw(); } catch (e) { console.warn('SwarmHive', e); } };
       if (!HV.keyed) { HV.keyed = true; document.addEventListener('keydown', e => { if (e.key === 'Escape' && !e.defaultPrevented && HV.sel && HV.root && HV.root.offsetParent) { HV.sel = null; redraw(); } }); }
       const hooks = () => (window.SwarmHive && window.SwarmHive.hooks) || {};
@@ -1401,7 +1425,10 @@
           if (moved) { HV.dragged = true; setTimeout(() => { HV.dragged = false; }, 0); } };
         window.addEventListener('pointermove', move); window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up); });
       if (HV.ro) HV.ro.disconnect();
-      HV.ro = new ResizeObserver(() => { try { hiveDraw(); } catch (e) { console.warn('SwarmHive', e); } });
+      HV.ro = new ResizeObserver(() => {
+        if (HV.roRaf) cancelAnimationFrame(HV.roRaf);
+        HV.roRaf = requestAnimationFrame(() => { HV.roRaf = 0; try { hiveDraw(); } catch (e) { console.warn('SwarmHive', e); } });
+      });
       HV.ro.observe(HV.root);
     }
     HV.args = {seq: opts && opts.seq != null ? Number(opts.seq) : null};

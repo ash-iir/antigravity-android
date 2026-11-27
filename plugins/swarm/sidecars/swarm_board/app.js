@@ -38,6 +38,9 @@
     clampsDirty: false,  // deferred "Show more" overflow check while hidden
     graphCache: null,
     graphHasPulse: false,
+    lastGraphSvg: '',
+    lastGraphViewBox: '',
+    lastGraphHeight: 0,
     // Lazy Raw tab payload fetched from /api/swarm/raw under omitRaw=1.
     loadedRaw: null,
     loadedRawKey: '',
@@ -1621,8 +1624,15 @@
     const g = buildGraphState(s, all, { replaying, upto, expandAll, hideInactive, width });
     const { nodes, pos, height, edges, unaddressed, broadcasts, current, curTargets, max, isActive, isCur } = g;
 
-    svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
-    svg.style.height = `${height}px`;
+    const vb = `0 0 ${width} ${height}`;
+    if (state.lastGraphViewBox !== vb) {
+      state.lastGraphViewBox = vb;
+      svg.setAttribute('viewBox', vb);
+    }
+    if (state.lastGraphHeight !== height) {
+      state.lastGraphHeight = height;
+      svg.style.height = `${height}px`;
+    }
 
     // renderGraph rebuilds the SVG on every snapshot change (member
     // transcripts change it every poll while members work), on resize and on
@@ -1695,10 +1705,14 @@
           `<text x="${p.x + p.w / 2 - bw / 2 + 6}" y="${p.y - p.h / 2 + 3}" text-anchor="middle">@all ${bcast}</text></g>` : '') +
         `</g>`;
     }
-    svg.innerHTML = `<defs>${defs}</defs>${edgesSvg}${nodesSvg}${countsSvg}${dots}`;
-    // SVG animations inserted via innerHTML start on the document clock (long past),
-    // so trigger the travelling dots explicitly.
-    svg.querySelectorAll('.dot-anim').forEach((a) => a.beginElement?.());
+    const svgHtml = `<defs>${defs}</defs>${edgesSvg}${nodesSvg}${countsSvg}${dots}`;
+    if (state.lastGraphSvg !== svgHtml || animateCur || hadPulse || svg.childElementCount === 0) {
+      state.lastGraphSvg = svgHtml;
+      svg.innerHTML = svgHtml;
+      // SVG animations inserted via innerHTML start on the document clock (long past),
+      // so trigger the travelling dots explicitly.
+      svg.querySelectorAll('.dot-anim').forEach((a) => a.beginElement?.());
+    }
     renderReplayBar(all, upto, current);
   }
 

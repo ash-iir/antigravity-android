@@ -377,7 +377,7 @@
 @media (prefers-reduced-motion: reduce) { .o2-tvth { transition: none; } }
 
 /* Hive map (Graph tab): threads as honeycomb cells, bees where they work. */
-.pane .hv-stage { position: relative; }
+.pane .hv-stage { position: relative; isolation: isolate; contain: layout style; }
 /* Zoom: the map scrolls inside its box; drag to pan. */
 .pane .hv-bar { display: flex; align-items: flex-start; gap: 12px; }
 .pane .hv-bar .hv-sum { flex: 1; min-width: 0; }
@@ -413,8 +413,9 @@
 .pane .hv-rs { flex: none; font-size: 12px; font-weight: 500; color: var(--o2-muted); white-space: nowrap; }
 .pane .hv-rs.working { color: var(--o2-info); } .pane .hv-rs.wait, .pane .hv-rs.needs { color: var(--o2-warn); } .pane .hv-rs.issue { color: var(--o2-bad); } .pane .hv-rs.done { color: var(--o2-ok); }
 .pane .hv-re { margin: 12px 0 0; font-size: 14px; color: var(--o2-muted); }
+.pane .hv-bees { position: relative; z-index: 1; }
 .pane .hv-bees.jump .hv-bee { transition: none; }
-.pane .hv-svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.pane .hv-svg { position: absolute; inset: 0; display: block; width: 100%; height: 100%; overflow: visible; z-index: 0; }
 .pane .hv-cell { fill: var(--o2-card); stroke: var(--o2-border); }
 .pane .hv-cell.full { fill: color-mix(in srgb, var(--o2-ok) 9%, var(--o2-card)); }
 .pane .hv-prog { fill: none; stroke: var(--o2-ok); stroke-width: 2.5; stroke-linejoin: round; stroke-linecap: round; }
