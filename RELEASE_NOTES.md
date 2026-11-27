@@ -1,3 +1,14 @@
+# Antigravity for Android v2.36.0 (Upstream)
+
+## Changes & Fixes (Upstream v2.36.0)
+
+### 1. Upstream Antigravity 2.36.0 Core & Web UI
+* Updated core `language_server` (`2.36.0-5596661662220288`) and web UI assets (`main.js`, `compiled_tailwind.css`, `prism/components/prism-latex.min.js`).
+* Updated `crash_suppressor` CPU and 24-byte `setup_dl_debug_hook` ATOMIC signatures for `2.36.0` (covering both embedded ELFs without clobbering adjacent instructions) and added `2.36.0` `net.defaultNS` offsets to `resolv_redirect`.
+* Updated `web/patch_main.py` for `2.36.0` minified Settings (`lo()` `closeSettings` hook) and generalized voice `AbortError` / `audioWorklet` Blob fallback matching.
+
+---
+
 # Antigravity for Android v2.35.4
 
 ## Release Packages

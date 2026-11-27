@@ -4,6 +4,9 @@ crash_suppressor.py - Bypasses preinit CPU feature check and preinit atomic flag
 from typing import Tuple, Dict, Any, List, Union
 
 CPU_SIGNATURES = [
+    # v2.36.0
+    (bytes.fromhex("b31301b00a609052680245f9e903282a3f010aeae1020054e8033836e8045036"),
+     bytes.fromhex("190000141f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d5")),
     # v2.35.2
     (bytes.fromhex("f30d01d00a609052683e40f9e903282a3f010aeae1020054e8033836e8045036"),
      bytes.fromhex("190000141f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d5")),
@@ -22,6 +25,12 @@ CPU_SIGNATURES = [
 ]
 
 ATOMIC_SIGNATURES = [
+    # v2.36.0 (ELF1 google_find_phdr / setup_dl_debug_hook)
+    (bytes.fromhex("4810019008a10e91290080520801e9f8480000b4c0035fd6"),
+     bytes.fromhex("4810019008a10e91090140f9490000b4c0035fd6080100f9")),
+    # v2.36.0 (ELF2 setup_dl_debug_hook)
+    (bytes.fromhex("a82c00b008a13691290080520801e9f8480000b4c0035fd6"),
+     bytes.fromhex("a82c00b008a13691090140f9490000b4c0035fd6080100f9")),
     # v2.35.2
     (bytes.fromhex("a80a01f008a12891290080520801e9f8480000b4c0035fd61f2003d5"),
      bytes.fromhex("a80a01f008a12891090140f92a008052490000b4c0035fd60a0100f9")),
@@ -66,15 +75,15 @@ def apply(data: bytearray, verify: bool = False, dry_run: bool = False, allow_mi
             raw_cpu, repl_cpu = rc, rpc
             break
 
-    selected_atomic = None
+    atomic_matches = []
     raw_atomic, repl_atomic = [], []
     for tgt, rpl in ATOMIC_SIGNATURES:
         ra = find_all(data, tgt)
         rpa = find_all(data, rpl)
         if ra or rpa:
-            selected_atomic = (tgt, rpl)
-            raw_atomic, repl_atomic = ra, rpa
-            break
+            atomic_matches.append((tgt, rpl, ra, rpa))
+            raw_atomic.extend(ra)
+            repl_atomic.extend(rpa)
 
     info = {
         "name": "failfast_cpu_and_atomic",
@@ -106,8 +115,9 @@ def apply(data: bytearray, verify: bool = False, dry_run: bool = False, allow_mi
     if not dry_run:
         for pos in raw_cpu:
             data[pos:pos + len(selected_cpu[1])] = selected_cpu[1]
-        for pos in raw_atomic:
-            data[pos:pos + len(selected_atomic[1])] = selected_atomic[1]
+        for _, rpl, ra, _ in atomic_matches:
+            for pos in ra:
+                data[pos:pos + len(rpl)] = rpl
         info["status"] = "patched"
     else:
         info["status"] = "dry_run"

@@ -29,21 +29,46 @@ def patch_main(file_path):
         print("[web-patch] Patched voice left_home unmount race condition")
         modified = True
 
-    # Separate AbortError from NotReadableError in $Nb
-    target_err = 'case "NotReadableError":case "AbortError":return oU("Microphone is in use or unavailable.");'
-    replacement_err = 'case "NotReadableError":return oU("Microphone is in use or unavailable.");case "AbortError":return oU("Microphone connection was aborted. Please retry.");'
-    if target_err in content:
-        content = content.replace(target_err, replacement_err)
-        print("[web-patch] Patched voice AbortError message")
-        modified = True
+    # Separate AbortError from NotReadableError in microphone error handler
+    err_anchor = 'case "NotReadableError":case "AbortError":'
+    err_idx = content.find(err_anchor)
+    if err_idx != -1:
+        err_win = content[err_idx:min(len(content), err_idx + 200)]
+        err_m = re.search(
+            r'case "NotReadableError":case "AbortError":return ([A-Za-z0-9_$]+)\("Microphone is in use or unavailable\."\);',
+            err_win,
+        )
+        if err_m:
+            err_fn = err_m.group(1)
+            content = content.replace(
+                err_m.group(0),
+                f'case "NotReadableError":return {err_fn}("Microphone is in use or unavailable.");'
+                f'case "AbortError":return {err_fn}("Microphone connection was aborted. Please retry.");',
+                1,
+            )
+            print("[web-patch] Patched voice AbortError message")
+            modified = True
 
     # Use Blob URL fallback for AudioWorklet addModule
-    target_worklet = 'G(await E(I.audioWorklet.addModule("data:application/javascript;base64,"+btoa(W1a))))'
-    replacement_worklet = 'G(await E(I.audioWorklet.addModule(window.URL&&window.Blob?URL.createObjectURL(new Blob([W1a],{type:"application/javascript"})):"data:application/javascript;base64,"+btoa(W1a))))'
-    if target_worklet in content:
-        content = content.replace(target_worklet, replacement_worklet)
-        print("[web-patch] Patched audioWorklet addModule to use Blob URL fallback")
-        modified = True
+    wk_anchor = '.audioWorklet.addModule("data:application/javascript;base64,"+btoa('
+    wk_idx = content.find(wk_anchor)
+    if wk_idx != -1:
+        wk_win = content[max(0, wk_idx - 120):min(len(content), wk_idx + 120)]
+        worklet_m = re.search(
+            r'([A-Za-z0-9_$]+)\(await ([A-Za-z0-9_$]+)\(([A-Za-z0-9_$]+)\.audioWorklet\.addModule\("data:application/javascript;base64,"\+btoa\(([A-Za-z0-9_$]+)\)\)\)\)',
+            wk_win,
+        )
+        if worklet_m:
+            cb, await_fn, ctx_var, src_var = worklet_m.groups()
+            content = content.replace(
+                worklet_m.group(0),
+                f'{cb}(await {await_fn}({ctx_var}.audioWorklet.addModule('
+                f'window.URL&&window.Blob?URL.createObjectURL(new Blob([{src_var}],{{type:"application/javascript"}})):'
+                f'"data:application/javascript;base64,"+btoa({src_var}))))',
+                1,
+            )
+            print("[web-patch] Patched audioWorklet addModule to use Blob URL fallback")
+            modified = True
 
     # Ensure any pre-existing setDesktopMode(v) call passes the native bridge token.
     legacy_desktop_call = "if(window.Android&&typeof window.Android.setDesktopMode==='function')window.Android.setDesktopMode(v)"
@@ -195,9 +220,9 @@ def inject_account_switcher(content):
     gob_m = re.search(
         r'var\s+([A-Za-z0-9_$]+)=\(\{isActive:[A-Za-z0-9_$]+\}=\{\}\)=>\{var\s+([A-Za-z0-9_$]+)=([A-Za-z0-9_$]+)\(\)\.core\.authService,.*?'
         r'([A-Za-z0-9_$]+)=([A-Za-z0-9_$]+)\(([A-Za-z0-9_$]+)\),([A-Za-z0-9_$]+)=\5\(([A-Za-z0-9_$]+)\),.*?'
-        r'([A-Za-z0-9_$]+)=([A-Za-z0-9_$]+)\(\),.*?'
-        r'([A-Za-z0-9_$]+)=([A-Za-z0-9_$]+)\(\),.*?'
-        r'([A-Za-z0-9_$]+)=\9\.get\("isRemoteControl"\)\?\?!1,([A-Za-z0-9_$]+)=\11\.useCloseSettings\(\)',
+        r'([A-Za-z0-9_$]+)=([A-Za-z0-9_$]+)\(\),[^;]*?'
+        r'([A-Za-z0-9_$]+)=\9\.get\("isRemoteControl"\)\?\?!1,'
+        r'([A-Za-z0-9_$]+)=([A-Za-z0-9_$]+)\(\)(\.useCloseSettings\(\))?',
         gob_win,
         re.DOTALL,
     )
@@ -213,9 +238,11 @@ def inject_account_switcher(content):
     auth_state_var = gob_m.group(7)
     xk_sel = gob_m.group(8)
     nj_fn = gob_m.group(10)
-    ol_fn = gob_m.group(12)
-    is_rc_var = gob_m.group(13)
-    close_settings_var = gob_m.group(14)
+    is_rc_var = gob_m.group(11)
+    close_settings_var = gob_m.group(12)
+    close_hook_fn = gob_m.group(13)
+    close_hook_suffix = gob_m.group(14) or ""
+    close_settings_expr = f"{close_hook_fn}(){close_hook_suffix}"
 
     # Locate LU, PU, NU, OU, BI, Dgb, Ew, eE, react_id
     lu_m = re.search(
@@ -399,7 +426,7 @@ def inject_account_switcher(content):
     ag_screen_comp = (
         f"function AgAccountsScreen(){{"
         f"var _u={el_fn}({sb_sel}),_au={el_fn}({xk_sel}),_as={sd_fn}().core.authService,"
-        f"_rf={kb_fn}(),_st={cl_fn}(),_cs={ol_fn}().useCloseSettings(),"
+        f"_rf={kb_fn}(),_st={cl_fn}(),_cs={close_settings_expr},"
         f"_rc={nj_fn}().get(\"isRemoteControl\")??!1;"
         f"return window.__agAccountSwitcher?window.__agAccountSwitcher.renderScreen({{"
         f"React:{react_id},LU:{lu_comp},PU:{pu_comp},NU:{nu_comp},OU:{ou_comp},"
