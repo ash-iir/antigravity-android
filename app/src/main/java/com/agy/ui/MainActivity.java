@@ -215,7 +215,6 @@ public class MainActivity extends Activity
 
         splash = new SplashController(this, themeManager, rootLayout);
         splash.setRetryListener(this::retryCore);
-        rootLayout.addView(splash.view(), ViewParams.full());
         splash.loadInitial();
 
         splash.installExitAnimation(this);
