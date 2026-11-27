@@ -15,7 +15,7 @@ on:
       tag_name:
         description: 'Release Tag (e.g. v2.34.0)'
         required: false
-        default: 'v2.34.20'
+        default: 'v2.34.21'
       draft:
         description: 'Create Draft Release'
         type: boolean

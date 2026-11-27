@@ -1,3 +1,20 @@
+# Antigravity for Android v2.34.21
+
+## Release Packages
+
+| Package | Application ID | Runtime Port | Description |
+| :--- | :--- | :--- | :--- |
+| **`antigravity.apk`** | `com.agy` | 45157 | Standard production release with original Google account checks. |
+| **`antigravity-region-bypass.apk`** | `com.agy` | 45157 | Region-bypass edition with account eligibility check bypass. |
+| **`SHA256SUMS.txt`** | — | — | Cryptographic SHA-256 checksums for verification. |
+
+## Changes & Fixes (v2.34.21)
+
+### 1. Chat Composer Cleanup
+* **Remove `/swarm` Quick Chip:** Cleanly removes the `/swarm` toggle chip patch (`web/generated/patches/swarm_chip.js`) from the chat composer toolbar, keeping the composer minimal and unmodified.
+
+---
+
 # Antigravity for Android v2.34.20
 
 ## Release Packages
