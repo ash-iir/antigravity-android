@@ -1459,6 +1459,277 @@ assert.deepStrictEqual(clicked, ['conv-cold', 'conv-warm'], 'warm click must rou
 sandbox.nativeNotifications.openSystemPreferences();
 assert.deepStrictEqual(settingsCalls, ['notify-tok'], 'openSystemPreferences must forward token');
 EOF
+
+    # Behavioral test: swarm_pane_chip injects a compact Swarm chip into
+    # [data-agent-composer-root], opens/toggles the Swarm sidecar pane via
+    # Redux/extensibility (even without a rendered sidecar:// link) or DOM
+    # fallback, debounces rapid double-clicks, and never mutates composer text.
+    node - "$TMP/web/generated/patches/swarm_pane_chip.js" <<'EOF'
+const fs = require('fs');
+const vm = require('vm');
+const assert = require('assert');
+
+const code = fs.readFileSync(process.argv[2], 'utf8');
+
+function makeEl(tag, attrs = {}) {
+  const attrMap = new Map(Object.entries(attrs));
+  const listeners = new Map();
+  const el = {
+    tagName: String(tag).toUpperCase(),
+    id: attrs.id || '',
+    className: attrs.class || '',
+    type: '',
+    innerHTML: '',
+    textContent: attrs.textContent || '',
+    disabled: false,
+    parentElement: null,
+    children: [],
+    setAttribute(k, v) {
+      attrMap.set(k, String(v));
+      if (k === 'id') this.id = String(v);
+    },
+    getAttribute(k) {
+      return attrMap.has(k) ? attrMap.get(k) : null;
+    },
+    hasAttribute(k) {
+      return attrMap.has(k);
+    },
+    appendChild(child) {
+      child.parentElement = this;
+      this.children.push(child);
+      return child;
+    },
+    insertBefore(child, ref) {
+      child.parentElement = this;
+      const idx = this.children.indexOf(ref);
+      if (idx >= 0) this.children.splice(idx, 0, child);
+      else this.children.push(child);
+      return child;
+    },
+    addEventListener(type, fn) {
+      if (!listeners.has(type)) listeners.set(type, []);
+      listeners.get(type).push(fn);
+    },
+    click() {
+      const fns = listeners.get('click') || [];
+      for (const fn of fns) fn({ preventDefault() {}, stopPropagation() {} });
+    },
+    closest(sel) {
+      let cur = this;
+      while (cur) {
+        if (sel === '[data-side-panel-focus-scope="true"]' && cur.getAttribute('data-side-panel-focus-scope') === 'true') {
+          return cur;
+        }
+        cur = cur.parentElement;
+      }
+      return null;
+    },
+    querySelector(sel) {
+      return this.querySelectorAll(sel)[0] || null;
+    },
+    querySelectorAll(sel) {
+      const out = [];
+      function walk(node) {
+        for (const ch of node.children) {
+          if (matches(ch, sel)) out.push(ch);
+          walk(ch);
+        }
+      }
+      walk(this);
+      return out;
+    }
+  };
+  return el;
+}
+
+function matches(el, sel) {
+  if (sel === '[data-agent-composer-root]') return el.hasAttribute('data-agent-composer-root');
+  if (sel === '[data-agy-swarm-chip="true"]') return el.getAttribute('data-agy-swarm-chip') === 'true';
+  if (sel === '[data-testid="sidecar-iframe-slot"][data-visible="true"]') {
+    return el.getAttribute('data-testid') === 'sidecar-iframe-slot' && el.getAttribute('data-visible') === 'true';
+  }
+  if (sel === '[data-testid="sidecar-iframe-slot"][data-sidecar-id*="swarm" i]') {
+    return el.getAttribute('data-testid') === 'sidecar-iframe-slot' && /swarm/i.test(el.getAttribute('data-sidecar-id') || '');
+  }
+  if (sel === 'a[href]') return el.tagName === 'A' && el.hasAttribute('href');
+  if (sel === 'button[data-quotable-inline="true"]') {
+    return el.tagName === 'BUTTON' && el.getAttribute('data-quotable-inline') === 'true';
+  }
+  if (sel === '[data-testid="plugins-submenu-item"][data-sidecar-id]') {
+    return el.getAttribute('data-testid') === 'plugins-submenu-item' && el.hasAttribute('data-sidecar-id');
+  }
+  if (sel === '[data-testid="mobile-toggle-aux-sidebar"]') {
+    return el.getAttribute('data-testid') === 'mobile-toggle-aux-sidebar';
+  }
+  if (sel === '[data-testid="toggle-aux-sidebar"]') {
+    return el.getAttribute('data-testid') === 'toggle-aux-sidebar';
+  }
+  if (sel === 'button[aria-label="Toggle Side Panel"]') {
+    return el.tagName === 'BUTTON' && el.getAttribute('aria-label') === 'Toggle Side Panel';
+  }
+  return false;
+}
+
+// Build mock DOM: main composer + chat input + nested side-panel composer (must be skipped).
+const head = makeEl('head');
+const body = makeEl('body');
+const root = makeEl('div', { id: 'root' });
+body.appendChild(root);
+
+const chatInput = makeEl('div', { contenteditable: 'true', textContent: 'Keep my draft message intact' });
+const composerRoot = makeEl('div', { 'data-agent-composer-root': '' });
+const leftGroup = makeEl('div', { class: 'flex min-w-0 flex-1' });
+const rightGroup = makeEl('div', { class: 'shrink-0 flex' });
+composerRoot.appendChild(leftGroup);
+composerRoot.appendChild(rightGroup);
+root.appendChild(chatInput);
+root.appendChild(composerRoot);
+
+const sidePanelScope = makeEl('div', { 'data-side-panel-focus-scope': 'true' });
+const nestedComposer = makeEl('div', { 'data-agent-composer-root': '' });
+sidePanelScope.appendChild(nestedComposer);
+root.appendChild(sidePanelScope);
+
+// Mock Redux store + extensibility registry on React fibers above composerRoot.
+const dispatched = [];
+const reduxState = {
+  sidePanel: { conversationPanes: {} },
+  sidePanelV2: { conversationPanes: {} }
+};
+const store = {
+  getState: () => reduxState,
+  dispatch(action) {
+    dispatched.push(action);
+    const scope = action.payload && action.payload.panelScope;
+    const cid = scope && scope.cascadeId;
+    if (action.type === 'sidePanelV2/setContent' && cid) {
+      reduxState.sidePanelV2.conversationPanes[cid] = {
+        activeTabId: action.payload.tabId,
+        tabs: [{ id: action.payload.tabId, content: action.payload.content }]
+      };
+    } else if (action.type === 'sidePanel/setSidePanelOpen' && cid) {
+      reduxState.sidePanel.conversationPanes[cid] = {
+        ...(reduxState.sidePanel.conversationPanes[cid] || {}),
+        isPaneOpen: Boolean(action.payload.isOpen)
+      };
+    }
+  }
+};
+const registry = {
+  get(key) {
+    if (key === 'auxPaneComponent') return { redesignEnabled: true };
+    if (key === 'extensibility') {
+      return {
+        provider: {
+          getState: () => [{
+            sidecarId: 'builtin/swarm',
+            baseUrl: 'https://127.0.0.1:45158/sidecar/swarm',
+            config: {
+              uiConfig: {
+                displayName: 'Swarm',
+                views: [{ path: '/swarm_board', title: 'Swarm Board', entrypoint: 1 }]
+              }
+            }
+          }]
+        },
+        resolveSidecarUrl: (base, p) => base + p
+      };
+    }
+    return undefined;
+  }
+};
+const iframeSrcCalls = [];
+const iframeCtx = {
+  setIframeSrc: (base, full) => iframeSrcCalls.push({ base, full }),
+  navigateIframe: () => {}
+};
+
+const fiberStore = { memoizedProps: { value: { store } }, return: null };
+const fiberReg = { memoizedProps: { value: registry }, return: fiberStore };
+const fiberIframe = { memoizedProps: { value: iframeCtx }, return: fiberReg };
+composerRoot.__reactFiber$test = { memoizedProps: {}, return: fiberIframe };
+
+let fakeNow = 50000;
+const RealDate = Date;
+function FakeDate(...args) {
+  return args.length ? new RealDate(...args) : new RealDate(fakeNow);
+}
+FakeDate.now = () => fakeNow;
+
+const mockDocument = {
+  readyState: 'complete',
+  head,
+  body,
+  documentElement: body,
+  createElement: (tag) => makeEl(tag),
+  getElementById: (id) => (id === 'root' ? root : head.children.find((c) => c.id === id) || null),
+  querySelector: (sel) => body.querySelector(sel),
+  querySelectorAll: (sel) => body.querySelectorAll(sel)
+};
+
+const sandbox = {
+  console,
+  Date: FakeDate,
+  URL,
+  URLSearchParams,
+  setTimeout: (fn) => { fn(); return 1; },
+  document: mockDocument,
+  location: { pathname: '/c/conv-swarm-1', search: '' }
+};
+sandbox.window = sandbox;
+sandbox.globalThis = sandbox;
+
+vm.runInNewContext(code, sandbox);
+
+// 1. Chip injected into main composer (between leftGroup and rightGroup), NOT into side-panel sub-composer.
+assert.strictEqual(composerRoot.children.length, 3, 'chip must be inserted into main composer');
+const chip = composerRoot.children[1];
+assert.strictEqual(chip.getAttribute('data-agy-swarm-chip'), 'true');
+assert.strictEqual(chip.getAttribute('data-testid'), 'agy-swarm-pane-chip');
+assert.strictEqual(nestedComposer.children.length, 0, 'side-panel sub-composer must be skipped');
+
+// Re-scanning must not duplicate the chip.
+assert.strictEqual(sandbox.__agSwarmPaneChip.scan(), 0, 'scan must be idempotent');
+
+// 2. Click when NO sidecar:// link is in DOM -> dispatches sidePanelV2/setContent + sidePanel/setSidePanelOpen(true).
+chip.click();
+assert.strictEqual(dispatched.length, 2, 'opening Swarm pane must dispatch setContent + setSidePanelOpen');
+assert.strictEqual(dispatched[0].type, 'sidePanelV2/setContent');
+assert.strictEqual(dispatched[0].payload.panelScope.kind, 'cascadeId');
+assert.strictEqual(dispatched[0].payload.panelScope.cascadeId, 'conv-swarm-1');
+assert.strictEqual(dispatched[0].payload.tabId, 'sidecar__builtin/swarm__/swarm_board');
+assert.strictEqual(dispatched[0].payload.content.type, 'sidecarView');
+assert.strictEqual(dispatched[1].type, 'sidePanel/setSidePanelOpen');
+assert.strictEqual(dispatched[1].payload.isOpen, true);
+assert.strictEqual(iframeSrcCalls.length, 1, 'iframeCtx.setIframeSrc should be called');
+assert.strictEqual(chip.getAttribute('data-swarm-open'), 'true');
+
+// 3. Rapid double-click within 250ms is debounced.
+fakeNow += 100;
+chip.click();
+assert.strictEqual(dispatched.length, 2, 'double-tap within 250ms must be debounced');
+
+// 4. Click again after 250ms while Swarm pane is open -> toggles CLOSED.
+fakeNow += 300;
+chip.click();
+assert.strictEqual(dispatched.length, 3, 'second click after debounce must close pane');
+assert.strictEqual(dispatched[2].type, 'sidePanel/setSidePanelOpen');
+assert.strictEqual(dispatched[2].payload.isOpen, false);
+assert.strictEqual(chip.getAttribute('data-swarm-open'), 'false');
+
+// 5. Fallback to DOM inline Swarm pill when React fiber context is unavailable.
+delete composerRoot.__reactFiber$test;
+const inlinePill = makeEl('button', { 'data-quotable-inline': 'true', title: 'Swarm Board', textContent: 'Open the Swarm UI' });
+let pillClicks = 0;
+inlinePill.addEventListener('click', () => { pillClicks++; });
+root.appendChild(inlinePill);
+fakeNow += 300;
+chip.click();
+assert.strictEqual(pillClicks, 1, 'DOM fallback must click existing Open the Swarm UI pill');
+
+// 6. Composer chat input text is completely untouched.
+assert.strictEqual(chatInput.textContent, 'Keep my draft message intact', 'chat input must never be mutated');
+EOF
 fi
 
 echo "web build selftest: OK"

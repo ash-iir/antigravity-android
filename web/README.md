@@ -84,6 +84,7 @@ web/
 │       ├── back_navigation.js
 │       ├── github_device_auth.js
 │       ├── account_switcher.js
+│       ├── swarm_pane_chip.js
 │       └── startup_ready.js
 ├── src/                          # Modular source fragments
 │   ├── boot/                     # Early boot fragments
@@ -119,6 +120,7 @@ web/
 | **`patches/back_navigation.js`** | IIFE | ~18 KB | Exposes `window.__agHandleBack()` for step-by-step Android Back across Settings/Customizations overlays (ancestor z-index, Back/Close/Escape), in-layout back controls, renderer-initiated `window.history.back()` (`__TSR_index > 0`), breadcrumb fallback, and clean Home `'exit'` signaling; also intercepts short taps on `[data-testid="mobile-back-to-home"]` on nested sub-routes for 1-step back (long-press >= 450ms or top-level routes jump straight to Home `/`). |
 | **`patches/github_device_auth.js`** | IIFE | ~31 KB | Injects 1-tap direct GitHub browser login (OAuth 2.0 Device Flow via `AndroidBridge`) into the `GitHub (Local)` Accounts card for both initial sign-in and multi-account "Add account", preserving manual PAT paste. |
 | **`patches/account_switcher.js`** | IIFE | ~16.7 KB | Renders Settings -> Accounts and Account -> Saved Accounts using native Settings primitives (`LU`/`PU`/`NU`/`OU`/`BI`/`Dgb`), auto-syncs logged-in accounts, and performs instant hot-swap switching. |
+| **`patches/swarm_pane_chip.js`** | IIFE | ~22 KB | Injects a compact, theme-matched `Swarm` quick-open chip (`shrink-0`) into the main chat composer toolbar (`[data-agent-composer-root]`) that directly opens/toggles the upstream Swarm UI sidecar pane (via Redux `sidePanelV2/setContent` + `sidePanel/setSidePanelOpen` and `extensibility` registry, with DOM `Open the Swarm UI` / `sidecar://swarm` fallback and 250 ms debounce) without modifying composer text. |
 | **`patches/startup_ready.js`** | IIFE | ~4.7 KB | Signals first meaningful DOM render (`onUiReady`) and captures fatal JS errors. |
 | **`main.js`** | Raw + Patch | ~9.5 MB | Production React bundle patched by `patch_main.py`. |
 

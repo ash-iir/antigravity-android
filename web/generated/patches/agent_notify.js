@@ -20,6 +20,30 @@ if (!global.__AG_AGENT_NOTIFY_INSTALLED__) {
     ? document.hasFocus.bind(document)
     : null;
 
+  var hostForegroundFlag = (typeof global.__AG_HOST_IN_FOREGROUND__ === 'boolean')
+    ? global.__AG_HOST_IN_FOREGROUND__
+    : undefined;
+  var onForegroundFlagChanged = null;
+  var onUpstreamDoneSent = null;
+
+  try {
+    Object.defineProperty(global, '__AG_HOST_IN_FOREGROUND__', {
+      configurable: true,
+      enumerable: true,
+      get: function () {
+        return hostForegroundFlag;
+      },
+      set: function (val) {
+        var next = Boolean(val);
+        var changed = (hostForegroundFlag !== next);
+        hostForegroundFlag = next;
+        if (changed && typeof onForegroundFlagChanged === 'function') {
+          try { onForegroundFlagChanged(next); } catch (ignored) {}
+        }
+      }
+    });
+  } catch (ignored) {}
+
   function getBridge() {
     return global.Android || global.AndroidBridge || null;
   }
@@ -31,8 +55,8 @@ if (!global.__AG_AGENT_NOTIFY_INSTALLED__) {
         return Boolean(bridge.isInForeground());
       }
     } catch (ignored) {}
-    if (typeof global.__AG_HOST_IN_FOREGROUND__ === 'boolean') {
-      return global.__AG_HOST_IN_FOREGROUND__;
+    if (typeof hostForegroundFlag === 'boolean') {
+      return hostForegroundFlag;
     }
     if (typeof document !== 'undefined') {
       if (document.visibilityState === 'hidden') return false;
@@ -157,6 +181,9 @@ if (!global.__AG_AGENT_NOTIFY_INSTALLED__) {
           ? 'done'
           : (inner.type || 'action_required');
         sendNativeAlert(eventType, title, body, convId, notifId, Boolean(p.silent));
+        if (eventType === 'done' && typeof onUpstreamDoneSent === 'function') {
+          try { onUpstreamDoneSent(convId); } catch (ignored) {}
+        }
         return Promise.resolve();
       },
       onClicked: function (cb) {
@@ -222,6 +249,386 @@ if (!global.__AG_AGENT_NOTIFY_INSTALLED__) {
       return Promise.resolve('granted');
     };
     global.Notification = WrappedNotification;
+  } catch (ignored) {}
+
+  // 3. Background Assistant Reply Watcher:
+  //    In Swarm conversations, background monitors keep the conversation active
+  //    ("Waiting for subagent") instead of transitioning to IDLE, so upstream
+  //    window.nativeNotifications.send never fires when the coordinator posts a reply.
+  //    While backgrounded, watch [data-testid="conversation-view"] for a new, settled
+  //    assistant reply and dispatch via sendNativeAlert('done', ...) with shared dedupe.
+  try {
+    var REPLY_SETTLE_MS = 1800;
+    var MUTATION_THROTTLE_MS = 250;
+    var BG_POLL_MS = 1500;
+    var MAX_SNIPPET_LEN = 180;
+    var EXCLUDED_TEXT_SELECTOR = [
+      '.sr-only',
+      '[data-find-ignore]',
+      '[aria-hidden="true"]',
+      '[data-testid="live-status-row"]',
+      '[data-testid="idle-status-text"]',
+      '[data-testid="turn-cards-container"]',
+      '[data-testid="subagent-node"]',
+      'button',
+      'svg',
+      'style',
+      'script'
+    ].join(',');
+    var IGNORED_STATUS_TEXT = {
+      'agent working': true,
+      'agent said': true,
+      'waiting for subagent': true,
+      'working': true
+    };
+
+    var bgWatcherActive = false;
+    var bgConvId = '';
+    var baselineFingerprint = '';
+    var pendingFingerprint = '';
+    var pendingText = '';
+    var settleTimer = null;
+    var throttleTimer = null;
+    var bgPollTimer = null;
+    var replyObserver = null;
+    var observedTarget = null;
+
+    function normalizeText(str) {
+      return String(str || '').replace(/\s+/g, ' ').trim();
+    }
+
+    function simpleHash(str) {
+      var h = 2166136261;
+      for (var i = 0; i < str.length; i++) {
+        h ^= str.charCodeAt(i);
+        h = (h + (h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24)) >>> 0;
+      }
+      return h.toString(36);
+    }
+
+    function getConversationView() {
+      if (typeof document === 'undefined' || typeof document.querySelector !== 'function') {
+        return null;
+      }
+      return document.querySelector('[data-testid="conversation-view"]');
+    }
+
+    function getActiveConversationId(viewEl) {
+      try {
+        var el = viewEl || getConversationView();
+        if (el && typeof el.getAttribute === 'function') {
+          var attr = el.getAttribute('data-cascade-id');
+          if (attr && attr !== 'conversation') {
+            return String(attr).trim();
+          }
+        }
+      } catch (ignored) {}
+      try {
+        var loc = global.location;
+        if (loc && typeof loc.pathname === 'string') {
+          var m = loc.pathname.match(/\/(?:c|conversations)\/([^/?#]+)/);
+          if (m && m[1]) {
+            return decodeURIComponent(m[1]).trim();
+          }
+        }
+        if (loc && typeof loc.search === 'string') {
+          var sm = loc.search.match(/[?&](?:cascadeId|conversationId)=([^&#]+)/);
+          if (sm && sm[1]) {
+            return decodeURIComponent(sm[1]).trim();
+          }
+        }
+      } catch (ignored) {}
+      return '';
+    }
+
+    function extractCleanText(node) {
+      if (!node) return '';
+      try {
+        if (typeof node.cloneNode === 'function') {
+          var clone = node.cloneNode(true);
+          if (typeof clone.querySelectorAll === 'function') {
+            var excluded = clone.querySelectorAll(EXCLUDED_TEXT_SELECTOR);
+            for (var i = 0; i < excluded.length; i++) {
+              if (excluded[i] && excluded[i].parentNode) {
+                excluded[i].parentNode.removeChild(excluded[i]);
+              }
+            }
+          }
+          return normalizeText(clone.textContent);
+        }
+      } catch (ignored) {}
+      return normalizeText(node.innerText || node.textContent || '');
+    }
+
+    function isIgnoredStatusOnly(text) {
+      if (!text) return true;
+      return Boolean(IGNORED_STATUS_TEXT[text.toLowerCase()]);
+    }
+
+    function readLatestAssistantReply(viewEl) {
+      var empty = { fingerprint: '', text: '' };
+      if (!viewEl || typeof viewEl.querySelectorAll !== 'function') {
+        return empty;
+      }
+
+      // Path A: Coordinator / bubble layout ([data-testid="agent-response"] [data-bubble-side="agent"])
+      var bubbles = viewEl.querySelectorAll('[data-testid="agent-response"] [data-bubble-side="agent"]');
+      if (bubbles && bubbles.length > 0) {
+        for (var i = bubbles.length - 1; i >= 0; i--) {
+          var b = bubbles[i];
+          var bText = extractCleanText(b);
+          if (!isIgnoredStatusOnly(bText)) {
+            var stepIdx = (typeof b.getAttribute === 'function' && b.getAttribute('data-step-index')) || '';
+            return {
+              fingerprint: 'bubble:' + bubbles.length + ':' + i + ':' + stepIdx + ':' + bText.length + ':' + simpleHash(bText),
+              text: bText
+            };
+          }
+        }
+        return empty;
+      }
+
+      // Path B: Standard step-list layout ([data-testid="agent-response"])
+      var responses = viewEl.querySelectorAll('[data-testid="agent-response"]');
+      if (!responses || responses.length === 0) {
+        return empty;
+      }
+      var lastIdx = responses.length - 1;
+      var lastResp = responses[lastIdx];
+      if (!lastResp) {
+        return empty;
+      }
+
+      if (typeof lastResp.querySelectorAll === 'function') {
+        var mdBlocks = lastResp.querySelectorAll('[data-markdown-block-index]');
+        if (mdBlocks && mdBlocks.length > 0) {
+          var lastBlock = mdBlocks[mdBlocks.length - 1];
+          var mdParent = lastBlock && lastBlock.parentNode;
+          var parts = [];
+          if (mdParent && typeof mdParent.querySelectorAll === 'function') {
+            var groupBlocks = mdParent.querySelectorAll('[data-markdown-block-index]');
+            for (var j = 0; j < groupBlocks.length; j++) {
+              var gText = extractCleanText(groupBlocks[j]);
+              if (gText) parts.push(gText);
+            }
+          } else {
+            var singleText = extractCleanText(lastBlock);
+            if (singleText) parts.push(singleText);
+          }
+          var joined = normalizeText(parts.join(' '));
+          if (!isIgnoredStatusOnly(joined)) {
+            return {
+              fingerprint: 'md:' + responses.length + ':' + mdBlocks.length + ':' + joined.length + ':' + simpleHash(joined),
+              text: joined
+            };
+          }
+        }
+      }
+
+      // Fallback: cleaned text of the latest agent-response container
+      var fallbackText = extractCleanText(lastResp);
+      if (!isIgnoredStatusOnly(fallbackText)) {
+        return {
+          fingerprint: 'resp:' + responses.length + ':' + fallbackText.length + ':' + simpleHash(fallbackText),
+          text: fallbackText
+        };
+      }
+      return empty;
+    }
+
+    function clearPendingReply() {
+      pendingFingerprint = '';
+      pendingText = '';
+      if (settleTimer !== null && typeof clearTimeout === 'function') {
+        clearTimeout(settleTimer);
+      }
+      settleTimer = null;
+    }
+
+    function detachObserver() {
+      if (replyObserver) {
+        try { replyObserver.disconnect(); } catch (ignored) {}
+        replyObserver = null;
+      }
+      observedTarget = null;
+    }
+
+    function attachObserver(target) {
+      if (typeof MutationObserver !== 'function') return;
+      var node = target || (typeof document !== 'undefined' ? (document.body || document.documentElement) : null);
+      if (!node || node === observedTarget) return;
+      detachObserver();
+      try {
+        replyObserver = new MutationObserver(scheduleReplyCheck);
+        replyObserver.observe(node, { childList: true, subtree: true, characterData: true });
+        observedTarget = node;
+      } catch (ignored) {
+        replyObserver = null;
+        observedTarget = null;
+      }
+    }
+
+    function stopBackgroundWatcher() {
+      bgWatcherActive = false;
+      bgConvId = '';
+      baselineFingerprint = '';
+      clearPendingReply();
+      detachObserver();
+      if (throttleTimer !== null && typeof clearTimeout === 'function') {
+        clearTimeout(throttleTimer);
+      }
+      throttleTimer = null;
+      if (bgPollTimer !== null && typeof clearInterval === 'function') {
+        clearInterval(bgPollTimer);
+      }
+      bgPollTimer = null;
+    }
+
+    function onReplySettled() {
+      settleTimer = null;
+      if (!bgWatcherActive || isHostInForeground()) {
+        stopBackgroundWatcher();
+        return;
+      }
+      var viewEl = getConversationView();
+      var convId = getActiveConversationId(viewEl);
+      if (convId !== bgConvId) {
+        bgConvId = convId;
+        baselineFingerprint = readLatestAssistantReply(viewEl).fingerprint;
+        clearPendingReply();
+        return;
+      }
+      var snap = readLatestAssistantReply(viewEl);
+      if (!snap.text || snap.fingerprint === baselineFingerprint) {
+        clearPendingReply();
+        return;
+      }
+      if (snap.fingerprint !== pendingFingerprint) {
+        pendingFingerprint = snap.fingerprint;
+        pendingText = snap.text;
+        if (typeof setTimeout === 'function') {
+          settleTimer = setTimeout(onReplySettled, REPLY_SETTLE_MS);
+        }
+        return;
+      }
+
+      // Reply has settled: update baseline first so this reply can never fire twice.
+      baselineFingerprint = snap.fingerprint;
+      var fullText = snap.text;
+      clearPendingReply();
+
+      var snippet = fullText.length > MAX_SNIPPET_LEN
+        ? (fullText.slice(0, MAX_SNIPPET_LEN - 3).trim() + '...')
+        : fullText;
+      var dedupeKey = 'bg-reply-' + (convId || 'active') + '-' + simpleHash(baselineFingerprint);
+      sendNativeAlert('done', 'Antigravity', snippet, convId, dedupeKey, false);
+    }
+
+    function checkForBackgroundReply() {
+      if (!bgWatcherActive) return;
+      if (isHostInForeground()) {
+        stopBackgroundWatcher();
+        return;
+      }
+      var viewEl = getConversationView();
+      if (viewEl && viewEl !== observedTarget) {
+        attachObserver(viewEl);
+      }
+      var convId = getActiveConversationId(viewEl);
+      if (convId !== bgConvId) {
+        bgConvId = convId;
+        baselineFingerprint = readLatestAssistantReply(viewEl).fingerprint;
+        clearPendingReply();
+        return;
+      }
+      var snap = readLatestAssistantReply(viewEl);
+      if (!snap.text || snap.fingerprint === baselineFingerprint) {
+        if (pendingFingerprint) {
+          clearPendingReply();
+        }
+        return;
+      }
+      if (snap.fingerprint !== pendingFingerprint) {
+        pendingFingerprint = snap.fingerprint;
+        pendingText = snap.text;
+        if (settleTimer !== null && typeof clearTimeout === 'function') {
+          clearTimeout(settleTimer);
+        }
+        if (typeof setTimeout === 'function') {
+          settleTimer = setTimeout(onReplySettled, REPLY_SETTLE_MS);
+        }
+      }
+    }
+
+    function scheduleReplyCheck() {
+      if (!bgWatcherActive || throttleTimer !== null) return;
+      if (typeof setTimeout !== 'function') {
+        checkForBackgroundReply();
+        return;
+      }
+      throttleTimer = setTimeout(function () {
+        throttleTimer = null;
+        checkForBackgroundReply();
+      }, MUTATION_THROTTLE_MS);
+    }
+
+    function startBackgroundWatcher() {
+      if (bgWatcherActive) return;
+      var viewEl = getConversationView();
+      bgWatcherActive = true;
+      bgConvId = getActiveConversationId(viewEl);
+      baselineFingerprint = readLatestAssistantReply(viewEl).fingerprint;
+      clearPendingReply();
+      attachObserver(viewEl);
+      if (bgPollTimer === null && typeof setInterval === 'function') {
+        bgPollTimer = setInterval(checkForBackgroundReply, BG_POLL_MS);
+      }
+    }
+
+    function syncForegroundWatcher() {
+      if (isHostInForeground()) {
+        if (bgWatcherActive) {
+          stopBackgroundWatcher();
+        }
+      } else {
+        if (!bgWatcherActive) {
+          startBackgroundWatcher();
+        }
+      }
+    }
+
+    onForegroundFlagChanged = function (inFg) {
+      if (inFg) {
+        stopBackgroundWatcher();
+      } else {
+        startBackgroundWatcher();
+      }
+    };
+
+    onUpstreamDoneSent = function (convId) {
+      if (!bgWatcherActive) return;
+      var viewEl = getConversationView();
+      var activeConvId = getActiveConversationId(viewEl);
+      if (!convId || !activeConvId || String(convId) === activeConvId) {
+        baselineFingerprint = readLatestAssistantReply(viewEl).fingerprint;
+        clearPendingReply();
+      }
+    };
+
+    if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+      document.addEventListener('visibilitychange', syncForegroundWatcher, true);
+    }
+    if (typeof global.addEventListener === 'function') {
+      global.addEventListener('pagehide', syncForegroundWatcher);
+      global.addEventListener('pageshow', syncForegroundWatcher);
+      global.addEventListener('blur', syncForegroundWatcher);
+      global.addEventListener('focus', syncForegroundWatcher);
+    }
+
+    // If loaded while already backgrounded, arm immediately.
+    if (!isHostInForeground()) {
+      startBackgroundWatcher();
+    }
   } catch (ignored) {}
 }
 
