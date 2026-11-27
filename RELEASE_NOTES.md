@@ -1,3 +1,26 @@
+# Antigravity for Android v2.35.4
+
+## Release Packages
+
+| Package | Application ID | Runtime Port | Description |
+| :--- | :--- | :--- | :--- |
+| **`antigravity.apk`** | `com.agy` | 45157 | Standard production release with original Google account checks. |
+| **`antigravity-region-bypass.apk`** | `com.agy` | 45157 | Region-bypass edition with account eligibility check bypass. |
+| **`SHA256SUMS.txt`** | — | — | Cryptographic SHA-256 checksums for verification. |
+
+## Changes & Fixes (v2.35.4)
+
+### 1. Upstream `v2.35.3` Merge (Fork Features Preserved)
+* Merged upstream `v2.35.3` (Antigravity core/web `v2.35.2` upgrade, mid-range/long-session performance optimizations, and `MainActivity` duplicate splash fix) while preserving all fork features (Swarm, background-resume, OAuth redirect, Back navigation, GitHub Device Flow, and Plugins mobile UI).
+
+### 2. Automated Upstream Sync & Release Workflow
+* Added `.github/workflows/sync-upstream.yml` and `tools/sync_upstream.py` to check upstream every 6 hours, safely merge, verify tests, bump version, and trigger release builds — automatically opening a GitHub Issue if manual conflict resolution is needed.
+
+### 3. Background Notification Debounce & Turn Gating
+* Fixed mid-task background notification spam by gating on active agent work (Stop/Cancel button, `"Agent working"`, active loaders), increasing settle time to 2.5s, and adding a 15s per-conversation cooldown while keeping urgent approval alerts immediate.
+
+---
+
 # Antigravity for Android v2.35.3
 
 ## Release Packages

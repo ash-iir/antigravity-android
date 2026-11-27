@@ -13,9 +13,9 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: 'Release Tag (e.g. v2.35.3)'
+        description: 'Release Tag (e.g. v2.35.4)'
         required: false
-        default: 'v2.35.3'
+        default: 'v2.35.4'
       draft:
         description: 'Create Draft Release'
         type: boolean
@@ -151,13 +151,11 @@ jobs:
 
             ---
 
-            ### What's New in v2.35.3
+            ### What's New in v2.35.4
 
-            * **Startup Crash Fix:** Fixed an `IllegalStateException` crash on launch in `MainActivity.onCreate` caused by attaching `SplashController`'s container to `rootLayout` twice after the `NativeSplashDotsView` refactor.
-            * **Upstream Antigravity 2.35.2:** Updated `language_server` (`2.35.2`) and web UI bundle (including Shiki worker, Prism components, and voices), with updated ELF patches (`pidfd`, `crash_suppressor`, dynamic `resolv_redirect`).
-            * **WebView Crash Recovery & Native Splash:** Added `onRenderProcessGone` automatic WebView recovery and switched `SplashController` to `NativeSplashDotsView` (~40 MB RAM saved on launch).
-            * **Mid-Range & Long-Session Tuning:** Added RAM-scaled `GOMEMLIMIT`/`GOGC`, 5.5 GB sidecar RAM threshold, granular ARMv8.0 crypto flags, buffered in-session `core.log` rotation, debounced DNS sync, mobile `backdrop-filter` blur removal, filtered DOM mutation observer, adaptive `agy-daemon` sleep + log rotation, `ArrayDeque` log buffers, and `D8 --release` dexing.
-            * **Account Vault & Instant Switcher:** Persistent `0600` credential vault in **Settings → Accounts** and **Settings → Account → Saved Accounts**.
+            * **Upstream v2.35.3 Merge:** Integrated upstream `v2.35.3` (Antigravity core/web `v2.35.2` upgrade, mid-range/long-session performance optimizations, and `MainActivity` duplicate splash fix) while preserving all fork features (Swarm, background-resume, OAuth redirect, Back nav, GitHub Device Flow, Plugins mobile UI).
+            * **Automated Upstream Sync & Release CI:** Added `.github/workflows/sync-upstream.yml` + `tools/sync_upstream.py` to check upstream every 6h, safely merge, verify tests, bump version, and trigger release builds (opening a GitHub Issue if manual conflict resolution is needed).
+            * **Background Notification Debounce Fix:** Eliminated mid-task background notification spam by gating on active agent work (Stop/Cancel button, `"Agent working"`, active loaders), increasing settle time to 2.5s, and adding a 15s per-conversation cooldown while keeping urgent approval alerts immediate.
 
             ### Fork Highlights (Preserved)
 
@@ -174,4 +172,4 @@ jobs:
             ---
 
             > [!NOTE]
-            > **Seamless Upgrades:** Built with the consistent embedded signing keystore (`APP_VERSION_CODE=23503`). You can install this update directly over previous v2.x releases without uninstalling or losing local projects.
+            > **Seamless Upgrades:** Built with the consistent embedded signing keystore (`APP_VERSION_CODE=23504`). You can install this update directly over previous v2.x releases without uninstalling or losing local projects.
