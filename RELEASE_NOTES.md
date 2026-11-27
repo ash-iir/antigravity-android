@@ -1,3 +1,20 @@
+# Antigravity for Android v2.35.3
+
+## Release Packages
+
+| Package | Application ID | Runtime Port | Description |
+| :--- | :--- | :--- | :--- |
+| **`antigravity.apk`** | `com.agy` | 45157 | Standard production release with original Google account checks. |
+| **`antigravity-region-bypass.apk`** | `com.agy` | 45157 | Region-bypass edition with account eligibility check bypass. |
+| **`SHA256SUMS.txt`** | — | — | Cryptographic SHA-256 checksums for verification. |
+
+## Changes & Fixes (v2.35.3)
+
+### 1. Startup Crash Fix
+* Fixed an `IllegalStateException` crash on launch in `MainActivity.onCreate` caused by attaching `SplashController`'s container to `rootLayout` twice after the `NativeSplashDotsView` refactor in `v2.35.2`.
+
+---
+
 # Antigravity for Android v2.35.2
 
 ## Release Packages
