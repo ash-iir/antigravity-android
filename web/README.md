@@ -84,6 +84,7 @@ web/
 │       ├── back_navigation.js
 │       ├── github_device_auth.js
 │       ├── account_switcher.js
+│       ├── swarm_chip.js
 │       └── startup_ready.js
 ├── src/                          # Modular source fragments
 │   ├── boot/                     # Early boot fragments
@@ -114,11 +115,12 @@ web/
 | **`patches/web_optimizations.js`** | IIFE | ~8.7 KB | Disables 300 ms tap delay, tracks `visualViewport` (`--agy-vvh`), limits GPU layer hints, and applies container-responsive Flexbox & mobile Plugins/Accounts layout fixes. |
 | **`patches/touch_model_menu.js`** | IIFE | ~6.7 KB | Adapts hover-only Base UI model reasoning dropdowns to touch tap sequences. |
 | **`patches/theme_sync.js`** | IIFE | ~4.8 KB | Observes `<html>`/`<body>` theme classes and forwards token-gated changes to `AndroidBridge`. |
-| **`patches/agent_notify.js`** | IIFE | ~3.2 KB | Bridges agent audio cues and Notification API events to native clickable Android alerts. |
+| **`patches/agent_notify.js`** | IIFE | ~6.9 KB | Implements `window.nativeNotifications` (`send`, `onClicked` with cold-start buffering, `openSystemPreferences`), syncs `document.hasFocus()` to host foreground state, and bridges background agent completion/reply/approval alerts (plus `window.Notification` fallback) to clickable Android notifications with conversation deep-linking. |
 | **`patches/clipboard_image_paste.js`** | IIFE | ~5.8 KB | Handles clipboard and IME (`commitContent`) image paste into the chat composer. |
-| **`patches/back_navigation.js`** | IIFE | ~15.4 KB | Exposes `window.__agHandleBack()` for step-by-step Android Back across Settings/Customizations overlays (ancestor z-index, Back/Close/Escape), in-layout back controls, renderer-initiated `window.history.back()` (`__TSR_index > 0`), breadcrumb fallback, and clean Home `'exit'` signaling. |
+| **`patches/back_navigation.js`** | IIFE | ~18 KB | Exposes `window.__agHandleBack()` for step-by-step Android Back across Settings/Customizations overlays (ancestor z-index, Back/Close/Escape), in-layout back controls, renderer-initiated `window.history.back()` (`__TSR_index > 0`), breadcrumb fallback, and clean Home `'exit'` signaling; also intercepts short taps on `[data-testid="mobile-back-to-home"]` on nested sub-routes for 1-step back (long-press >= 450ms or top-level routes jump straight to Home `/`). |
 | **`patches/github_device_auth.js`** | IIFE | ~31 KB | Injects 1-tap direct GitHub browser login (OAuth 2.0 Device Flow via `AndroidBridge`) into the `GitHub (Local)` Accounts card for both initial sign-in and multi-account "Add account", preserving manual PAT paste. |
 | **`patches/account_switcher.js`** | IIFE | ~16.7 KB | Renders Settings -> Accounts and Account -> Saved Accounts using native Settings primitives (`LU`/`PU`/`NU`/`OU`/`BI`/`Dgb`), auto-syncs logged-in accounts, and performs instant hot-swap switching. |
+| **`patches/swarm_chip.js`** | IIFE | ~9.5 KB | Injects a compact, theme-matched `/swarm` toggle chip into the chat composer footer (`[data-agent-composer-root]`) that prefixes/removes `/swarm ` using Lexical-compatible input events while preserving existing draft text. |
 | **`patches/startup_ready.js`** | IIFE | ~4.7 KB | Signals first meaningful DOM render (`onUiReady`) and captures fatal JS errors. |
 | **`main.js`** | Raw + Patch | ~9.5 MB | Production React bundle patched by `patch_main.py`. |
 
@@ -197,4 +199,4 @@ web/
 bash web/tests/selftest.sh
 ```
 
-Verifies isolated copy integrity, confirms upstream `web/main.js` SHA-256 stays unmodified, validates all generated bundles (`node --check`), checks there are no double-wrapped IIFEs, and runs Node.js behavioral checks confirming `agy:host-resume` resets stalled `StreamAgentStateUpdates` streams (deferring while hidden) without aborting caller signals or unary/audio RPCs, `window.__agHandleBack()` handles ancestor z-index overlays, Back/Close/Escape dismissal, in-layout controls, `window.history.back()` SPA step-back, parent breadcrumb fallback, and clean Home `'exit'` signaling, `patches/web_optimizations.js` injects balanced Plugins mobile/Flexbox CSS rules, and `patches/github_device_auth.js` scopes strictly to `GitHub (Local)` and drives both initial sign-in and multi-account Device Flow polling/submission cleanly.
+Verifies isolated copy integrity, confirms upstream `web/main.js` SHA-256 stays unmodified, validates all generated bundles (`node --check`), checks there are no double-wrapped IIFEs, and runs Node.js behavioral checks covering `agy:host-resume` stalled-stream recovery, `window.__agHandleBack()` + on-screen `mobile-back-to-home` 1-step back/long-press passthrough, `patches/web_optimizations.js` Plugins mobile/Flexbox CSS, `patches/github_device_auth.js` Device Flow, `patches/swarm_chip.js` `/swarm ` toggle chip, and `patches/agent_notify.js` native notification bridge.

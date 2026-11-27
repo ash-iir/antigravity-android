@@ -55,6 +55,8 @@ public class MainActivity extends Activity
     private static final int REQUEST_STORAGE = 100;
     private static final int REQUEST_FILE_CHOOSER = 1002;
     private static final int REQUEST_MEDIA_PERMISSIONS = 1003;
+    private static final int REQUEST_APP_PERMISSIONS = 1004;
+    private static final String PERMISSION_POST_NOTIFICATIONS = "android.permission.POST_NOTIFICATIONS";
     private static final long SPLASH_TIMEOUT_MS = 60000;
     private static final long POLL_STARTUP_INTERVAL_MS = 50;
     private static final long POLL_READY_INTERVAL_MS = 1000;
@@ -90,6 +92,8 @@ public class MainActivity extends Activity
     private boolean pendingHostResume = false;
     private long pendingResumeBackgroundMs = 0L;
     private boolean pendingResumeWasStopped = false;
+    private String pendingNotificationConversationId = null;
+    private boolean notificationPermissionPrompted = false;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
 
@@ -233,6 +237,8 @@ public class MainActivity extends Activity
 
         splashDeadline = System.currentTimeMillis() + SPLASH_TIMEOUT_MS;
         com.agy.ui.download.FileDownloader.pruneStalePendingBlobsAsync(this);
+        com.agy.gateway.handlers.NotificationHandler.ensureChannels(this);
+        captureNotificationIntent(getIntent());
         requestAppPermissions();
 
         startCoreService();
@@ -340,6 +346,7 @@ public class MainActivity extends Activity
     public void dismissSplash() {
         Log.i(TAG, "dismissSplash: fading out splashView (280ms)");
         splash.dismiss();
+        flushPendingNotificationConversation();
         UpdateChecker.checkOnLaunch(this);
     }
 
@@ -419,8 +426,68 @@ public class MainActivity extends Activity
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
+        captureNotificationIntent(intent);
         if (oauthManager != null) {
             oauthManager.handleDeepLink(this, intent, null);
+        }
+    }
+
+    private void captureNotificationIntent(Intent intent) {
+        if (intent == null) {
+            return;
+        }
+        String convId = intent.getStringExtra(
+                com.agy.gateway.handlers.NotificationHandler.EXTRA_CONVERSATION_ID);
+        if (convId != null && !convId.trim().isEmpty()) {
+            pendingNotificationConversationId = convId.trim();
+            intent.removeExtra(com.agy.gateway.handlers.NotificationHandler.EXTRA_CONVERSATION_ID);
+            flushPendingNotificationConversation();
+        }
+    }
+
+    private void flushPendingNotificationConversation() {
+        if (pendingNotificationConversationId == null || !appLoaded || webViewHost == null) {
+            return;
+        }
+        final WebView wv = webViewHost.getWebView();
+        if (wv == null) {
+            return;
+        }
+        final String convId = pendingNotificationConversationId;
+        pendingNotificationConversationId = null;
+        wv.post(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    String js = "(function(id){ try { "
+                            + "if (typeof window.__agOpenNotificationConversation === 'function') { "
+                            + "window.__agOpenNotificationConversation(id); "
+                            + "} else { "
+                            + "window.__AG_PENDING_NOTIFICATION_CONV_ID__ = id; "
+                            + "} } catch(e){} })(" + org.json.JSONObject.quote(convId) + ");";
+                    wv.evaluateJavascript(js, null);
+                } catch (Exception e) {
+                    Log.w(TAG, "failed to dispatch notification conversationId", e);
+                }
+            }
+        });
+    }
+
+    private void notifyWebViewForegroundState(boolean inForeground) {
+        if (webViewHost == null) {
+            return;
+        }
+        final WebView wv = webViewHost.getWebView();
+        if (wv == null) {
+            return;
+        }
+        try {
+            wv.evaluateJavascript(
+                    "(function(){ try { window.__AG_HOST_IN_FOREGROUND__="
+                            + (inForeground ? "true" : "false")
+                            + "; } catch(e){} })();",
+                    null);
+        } catch (Exception ignored) {
         }
     }
 
@@ -440,6 +507,7 @@ public class MainActivity extends Activity
         if (appLoaded && backgroundedAtMs == 0L) {
             backgroundedAtMs = SystemClock.elapsedRealtime();
         }
+        notifyWebViewForegroundState(false);
         if (webViewHost != null) {
             AppLifecycle.pause(webViewHost.getWebView());
         }
@@ -449,6 +517,7 @@ public class MainActivity extends Activity
     @Override
     protected void onStop() {
         sInForeground = false;
+        notifyWebViewForegroundState(false);
         if (appLoaded) {
             wasStopped = true;
             if (backgroundedAtMs == 0L) {
@@ -464,6 +533,7 @@ public class MainActivity extends Activity
         activityResumed = true;
         sInForeground = true;
         activeActivity = this;
+        notifyWebViewForegroundState(true);
         if (webViewHost != null) {
             AppLifecycle.resume(webViewHost.getWebView());
         }
@@ -478,6 +548,8 @@ public class MainActivity extends Activity
             handler.removeCallbacks(dispatchPendingHostResume);
             handler.postDelayed(dispatchPendingHostResume, HOST_RESUME_FALLBACK_DELAY_MS);
         }
+        flushPendingNotificationConversation();
+        maybeRequestPostNotifications();
         refreshTheme();
         if (OAuthTokenStore.hasToken(this)) {
             final android.content.Context appCtx = getApplicationContext();
@@ -524,9 +596,25 @@ public class MainActivity extends Activity
                     != PackageManager.PERMISSION_GRANTED) {
                 needed.add(android.Manifest.permission.RECORD_AUDIO);
             }
-            if (!needed.isEmpty()) {
-                requestPermissions(needed.toArray(new String[0]), REQUEST_MEDIA_PERMISSIONS);
+            if (Build.VERSION.SDK_INT >= 33
+                    && checkSelfPermission(PERMISSION_POST_NOTIFICATIONS)
+                    != PackageManager.PERMISSION_GRANTED) {
+                needed.add(PERMISSION_POST_NOTIFICATIONS);
+                notificationPermissionPrompted = true;
             }
+            if (!needed.isEmpty()) {
+                requestPermissions(needed.toArray(new String[0]), REQUEST_APP_PERMISSIONS);
+            }
+        }
+    }
+
+    private void maybeRequestPostNotifications() {
+        if (notificationPermissionPrompted || Build.VERSION.SDK_INT < 33) {
+            return;
+        }
+        if (checkSelfPermission(PERMISSION_POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            notificationPermissionPrompted = true;
+            requestPermissions(new String[]{PERMISSION_POST_NOTIFICATIONS}, REQUEST_APP_PERMISSIONS);
         }
     }
 

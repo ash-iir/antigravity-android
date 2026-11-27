@@ -159,6 +159,16 @@ public final class AndroidBridge {
      */
     @JavascriptInterface
     public void notifyAgentEvent(String token, String eventType, String title, String body) {
+        notifyAgentEventRich(token, eventType, title, body, null, null, false);
+    }
+
+    /**
+     * Posts a native Android notification with conversation deep-link metadata when
+     * the agent completes a task, replies, or needs input while backgrounded.
+     */
+    @JavascriptInterface
+    public void notifyAgentEventRich(String token, String eventType, String title, String body,
+                                     String conversationId, String notificationId, boolean silent) {
         if (!matchesNativeBridgeToken(token)) {
             return;
         }
@@ -167,7 +177,23 @@ public final class AndroidBridge {
         }
         String tag = (eventType != null && !eventType.trim().isEmpty())
                 ? ("agy_agent_" + eventType.trim()) : "agy_agent_done";
-        com.agy.gateway.handlers.NotificationHandler.postAgentAlert(appContext, tag, title, body);
+        com.agy.gateway.handlers.NotificationHandler.postAgentAlert(
+                appContext, tag, title, body, conversationId, silent);
+    }
+
+    /** Returns true iff MainActivity is currently resumed in the foreground. */
+    @JavascriptInterface
+    public boolean isInForeground() {
+        return MainActivity.isInForeground();
+    }
+
+    /** Opens Android's per-app notification settings screen. */
+    @JavascriptInterface
+    public void openNotificationSettings(String token) {
+        if (!matchesNativeBridgeToken(token)) {
+            return;
+        }
+        com.agy.gateway.handlers.NotificationHandler.openNotificationSettings(appContext);
     }
 
     /**

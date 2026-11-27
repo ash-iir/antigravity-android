@@ -335,6 +335,9 @@ function matchSimple(el, sel) {
   if (sel === '[data-testid="breadcrumb-segment"]') {
     return el.getAttribute('data-testid') === 'breadcrumb-segment';
   }
+  if (sel === '[data-testid="mobile-back-to-home"]') {
+    return el.getAttribute('data-testid') === 'mobile-back-to-home';
+  }
   if (sel === 'button[data-testid="mobile-back-to-home"]:not([disabled])') {
     return el.tagName === 'BUTTON' &&
       el.getAttribute('data-testid') === 'mobile-back-to-home' &&
@@ -353,6 +356,13 @@ function matchSimple(el, sel) {
 function createEnv(init) {
   const docRoot = makeNode({ tagName: 'BODY' });
   let historyBacks = 0;
+  let fakeNow = 50000;
+  const RealDate = Date;
+  function FakeDate(...args) {
+    return args.length ? new RealDate(...args) : new RealDate(fakeNow);
+  }
+  FakeDate.now = () => fakeNow;
+  const docListeners = new Map();
   const loc = Object.assign({ pathname: '/', search: '' }, (init && init.location) || {});
   const hist = {
     state: (init && init.historyState !== undefined) ? init.historyState : { __TSR_index: 0 },
@@ -362,13 +372,23 @@ function createEnv(init) {
   };
   const sandbox = {
     console,
+    Date: FakeDate,
     URLSearchParams,
     location: loc,
     history: hist,
     document: {
       querySelector: (sel) => docRoot.querySelector(sel),
       querySelectorAll: (sel) => docRoot.querySelectorAll(sel),
-      dispatchEvent: (ev) => docRoot.dispatchEvent(ev)
+      addEventListener: (type, fn) => {
+        if (!docListeners.has(type)) docListeners.set(type, []);
+        docListeners.get(type).push(fn);
+      },
+      dispatchEvent: (ev) => {
+        docRoot.dispatchEvent(ev);
+        const list = docListeners.get(ev.type) || [];
+        for (const fn of [...list]) fn(ev);
+        return !ev.defaultPrevented;
+      }
     },
     getComputedStyle: (el) => el.style
   };
@@ -381,7 +401,23 @@ function createEnv(init) {
     docRoot,
     location: loc,
     history: hist,
-    getHistoryBacks: () => historyBacks
+    getHistoryBacks: () => historyBacks,
+    fireMobileBackTap(target, holdMs) {
+      const downEv = { type: 'pointerdown', target };
+      sandbox.document.dispatchEvent(downEv);
+      fakeNow += holdMs || 0;
+      const clickEv = {
+        type: 'click',
+        target,
+        defaultPrevented: false,
+        stopped: false,
+        preventDefault() { this.defaultPrevented = true; },
+        stopPropagation() { this.stopped = true; },
+        stopImmediatePropagation() { this.stopped = true; }
+      };
+      sandbox.document.dispatchEvent(clickEv);
+      return clickEv;
+    }
   };
 }
 
@@ -610,6 +646,66 @@ function createEnv(init) {
 
   assert.strictEqual(env.sandbox.__agHandleBack(), true, 'mobile-back-to-home fallback should handle Back');
   assert.strictEqual(homeBack.clicks, 1);
+}
+
+// 12. On-screen mobile-back-to-home button:
+//     - Short tap on nested route (/customizations/plugins/github) with __TSR_index > 0 intercepts and calls history.back()
+//     - Short tap on nested route with __TSR_index === 0 clicks parent breadcrumb segment
+//     - Long-press (>= 450ms) on nested route passes through to native HR() Home jump
+//     - Short tap on top-level routes (/customizations, /c/conv-1, /conversations/conv-1) passes through to native HR()
+{
+  // 12a. Nested route + __TSR_index > 0 -> intercepts & calls history.back()
+  const env = createEnv({
+    location: { pathname: '/customizations/plugins/github', search: '' },
+    historyState: { __TSR_index: 2 }
+  });
+  const homeBack = makeNode({
+    tagName: 'BUTTON',
+    attrs: { 'data-testid': 'mobile-back-to-home', 'aria-label': 'Back to home' }
+  });
+  const iconChild = makeNode({ tagName: 'SPAN' });
+  homeBack.append(iconChild);
+  env.docRoot.append(homeBack);
+
+  const shortTap = env.fireMobileBackTap(iconChild, 80);
+  assert.strictEqual(shortTap.defaultPrevented, true, 'short tap on nested route must preventDefault');
+  assert.strictEqual(shortTap.stopped, true, 'short tap on nested route must stopImmediatePropagation');
+  assert.strictEqual(env.getHistoryBacks(), 1, 'short tap on nested route must call history.back()');
+
+  // 12b. Long-press (>= 450ms) on nested route -> passthrough to Home
+  const longTap = env.fireMobileBackTap(homeBack, 500);
+  assert.strictEqual(longTap.defaultPrevented, false, 'long-press must not intercept');
+  assert.strictEqual(longTap.stopped, false, 'long-press must pass through to native HR()');
+  assert.strictEqual(env.getHistoryBacks(), 1, 'long-press must not call history.back()');
+
+  // 12c. Nested route with __TSR_index === 0 -> clicks parent breadcrumb
+  env.history.state = { __TSR_index: 0 };
+  const nav = makeNode({ tagName: 'NAV', attrs: { 'aria-label': 'Breadcrumb' } });
+  const parentSeg = makeNode({
+    tagName: 'A',
+    attrs: { 'data-testid': 'breadcrumb-segment' }
+  });
+  const leafSeg = makeNode({
+    tagName: 'SPAN',
+    attrs: { 'data-testid': 'breadcrumb-segment', 'aria-current': 'page' }
+  });
+  nav.append(parentSeg, leafSeg);
+  env.docRoot.append(nav);
+  const deepLinkTap = env.fireMobileBackTap(homeBack, 50);
+  assert.strictEqual(deepLinkTap.defaultPrevented, true, 'deep-link nested tap must intercept via breadcrumb');
+  assert.strictEqual(parentSeg.clicks, 1, 'deep-link nested tap must click parent breadcrumb');
+  assert.strictEqual(leafSeg.clicks, 0);
+
+  // 12d. Top-level pages (/customizations, /c/conv-1, /conversations/conv-1) -> passthrough to Home
+  env.docRoot.removeChild(nav);
+  env.history.state = { __TSR_index: 2 };
+  for (const topPath of ['/customizations', '/c/conv-1', '/conversations/conv-1']) {
+    env.location.pathname = topPath;
+    const ev = env.fireMobileBackTap(homeBack, 60);
+    assert.strictEqual(ev.defaultPrevented, false, 'top-level route ' + topPath + ' must pass through to Home');
+    assert.strictEqual(ev.stopped, false, 'top-level route ' + topPath + ' must not stop propagation');
+  }
+  assert.strictEqual(env.getHistoryBacks(), 1, 'top-level passthroughs must not call history.back()');
 }
 EOF
 
@@ -1276,6 +1372,328 @@ runTests().catch((err) => {
   console.error(err);
   process.exit(1);
 });
+EOF
+
+    # Behavioral test: swarm_chip.js injects a compact /swarm toggle chip into [data-agent-composer-root],
+    # prefixes /swarm  preserving existing draft text (Lexical & textarea), and toggles off cleanly.
+    node - "$TMP/web/generated/patches/swarm_chip.js" <<'EOF'
+const fs = require('fs');
+const vm = require('vm');
+const assert = require('assert');
+
+const code = fs.readFileSync(process.argv[2], 'utf8');
+
+function makeNode(tag, opts) {
+  const o = opts || {};
+  const attrs = Object.assign({}, o.attrs || {});
+  const listeners = new Map();
+  const node = {
+    nodeType: o.nodeType || 1,
+    tagName: tag ? tag.toUpperCase() : '',
+    type: o.type || '',
+    value: o.value || '',
+    nodeValue: o.nodeValue !== undefined ? o.nodeValue : undefined,
+    textContent: o.textContent || '',
+    parentElement: null,
+    parent: null,
+    children: [],
+    childNodes: [],
+    focused: false,
+    selectionStart: 0,
+    selectionEnd: 0,
+    events: [],
+    setAttribute(k, v) { attrs[k] = String(v); },
+    getAttribute(k) { return Object.prototype.hasOwnProperty.call(attrs, k) ? attrs[k] : null; },
+    hasAttribute(k) { return Object.prototype.hasOwnProperty.call(attrs, k); },
+    focus() { this.focused = true; },
+    setSelectionRange(s, e) { this.selectionStart = s; this.selectionEnd = e; },
+    addEventListener(type, fn) {
+      if (!listeners.has(type)) listeners.set(type, []);
+      listeners.get(type).push(fn);
+    },
+    dispatchEvent(ev) {
+      this.events.push(ev);
+      const list = listeners.get(ev.type) || [];
+      for (const fn of [...list]) fn(ev);
+      return !ev.defaultPrevented;
+    },
+    click() {
+      this.dispatchEvent({
+        type: 'click',
+        target: this,
+        defaultPrevented: false,
+        preventDefault() { this.defaultPrevented = true; },
+        stopPropagation() {}
+      });
+    },
+    appendChild(child) {
+      child.parentElement = this;
+      child.parent = this;
+      this.childNodes.push(child);
+      if (child.nodeType === 1) this.children.push(child);
+      return child;
+    },
+    insertBefore(newNode, refNode) {
+      newNode.parentElement = this;
+      newNode.parent = this;
+      const ci = this.childNodes.indexOf(refNode);
+      if (ci >= 0) this.childNodes.splice(ci, 0, newNode);
+      else this.childNodes.push(newNode);
+      if (newNode.nodeType === 1) {
+        const ei = this.children.indexOf(refNode);
+        if (ei >= 0) this.children.splice(ei, 0, newNode);
+        else this.children.push(newNode);
+      }
+      return newNode;
+    },
+    get firstElementChild() { return this.children.length ? this.children[0] : null; },
+    get lastElementChild() { return this.children.length ? this.children[this.children.length - 1] : null; },
+    matches(sel) {
+      if (sel === '[data-agent-composer-root]') return this.hasAttribute('data-agent-composer-root');
+      if (sel === '[data-lexical-editor="true"]') return this.getAttribute('data-lexical-editor') === 'true';
+      if (sel === '[contenteditable="true"]') return this.getAttribute('contenteditable') === 'true';
+      if (sel === 'textarea') return this.tagName === 'TEXTAREA';
+      if (sel === 'button[data-agy-swarm-chip="true"]') {
+        return this.tagName === 'BUTTON' && this.getAttribute('data-agy-swarm-chip') === 'true';
+      }
+      if (sel === 'style[data-agy="swarm-chip"]') {
+        return this.tagName === 'STYLE' && this.getAttribute('data-agy') === 'swarm-chip';
+      }
+      return false;
+    },
+    closest(sel) {
+      let cur = this;
+      while (cur) {
+        if (cur.matches(sel)) return cur;
+        cur = cur.parentElement;
+      }
+      return null;
+    },
+    querySelector(sel) {
+      const list = this.querySelectorAll(sel);
+      return list.length ? list[0] : null;
+    },
+    querySelectorAll(sel) {
+      const out = [];
+      function walk(n) {
+        for (const ch of n.children) {
+          if (ch.matches(sel)) out.push(ch);
+          walk(ch);
+        }
+      }
+      walk(this);
+      return out;
+    }
+  };
+  return node;
+}
+
+function createSwarmEnv() {
+  const head = makeNode('head');
+  const body = makeNode('body');
+  const docListeners = new Map();
+  const doc = {
+    readyState: 'complete',
+    head,
+    body,
+    documentElement: body,
+    createElement(tag) { return makeNode(tag); },
+    querySelector(sel) { return head.querySelector(sel) || body.querySelector(sel); },
+    querySelectorAll(sel) { return [...head.querySelectorAll(sel), ...body.querySelectorAll(sel)]; },
+    addEventListener(type, fn) {
+      if (!docListeners.has(type)) docListeners.set(type, []);
+      docListeners.get(type).push(fn);
+    },
+    dispatchEvent(ev) {
+      const list = docListeners.get(ev.type) || [];
+      for (const fn of [...list]) fn(ev);
+      return true;
+    }
+  };
+  const sandbox = {
+    console,
+    Event,
+    document: doc,
+    setTimeout(fn) { fn(); return 1; },
+    clearTimeout() {}
+  };
+  sandbox.window = sandbox;
+  sandbox.self = sandbox;
+  sandbox.globalThis = sandbox;
+  vm.runInNewContext(code, sandbox);
+  return { sandbox, doc, head, body };
+}
+
+// 1. Style injection + brace balance + chip placement between left and right footer groups.
+{
+  const env = createSwarmEnv();
+  const style = env.head.querySelector('style[data-agy="swarm-chip"]');
+  assert(style, 'swarm-chip style element must be injected');
+  let depth = 0;
+  for (const ch of style.textContent) {
+    if (ch === '{') depth += 1;
+    else if (ch === '}') depth -= 1;
+    assert(depth >= 0, 'unbalanced closing brace in swarm_chip CSS');
+  }
+  assert.strictEqual(depth, 0, 'unbalanced opening brace in swarm_chip CSS');
+
+  const composer = env.doc.createElement('div');
+  const editorWrap = env.doc.createElement('div');
+  const editor = env.doc.createElement('div');
+  editor.setAttribute('data-lexical-editor', 'true');
+  editor.setAttribute('contenteditable', 'true');
+  editor.textContent = 'refactor auth module';
+  editorWrap.appendChild(editor);
+
+  const footer = env.doc.createElement('div');
+  footer.setAttribute('data-agent-composer-root', '');
+  const leftGroup = env.doc.createElement('div');
+  const rightGroup = env.doc.createElement('div');
+  footer.appendChild(leftGroup);
+  footer.appendChild(rightGroup);
+  composer.appendChild(editorWrap);
+  composer.appendChild(footer);
+  env.body.appendChild(composer);
+
+  env.sandbox.__agSwarmChip.scan();
+  const chip = footer.querySelector('button[data-agy-swarm-chip="true"]');
+  assert(chip, '/swarm chip must be injected into [data-agent-composer-root]');
+  assert.strictEqual(footer.children[1], chip, 'chip must sit between left and right groups');
+  assert.strictEqual(chip.getAttribute('data-active'), 'false');
+
+  // Click 1: inserts "/swarm " at start while preserving existing draft text, dispatches beforeinput+input, focuses editor.
+  chip.click();
+  assert.strictEqual(editor.textContent, '/swarm refactor auth module', 'must prepend /swarm  preserving draft');
+  assert.strictEqual(editor.focused, true, 'must focus editor after click');
+  assert.strictEqual(chip.getAttribute('data-active'), 'true', 'chip must highlight active');
+  assert.strictEqual(chip.getAttribute('aria-pressed'), 'true');
+  assert(editor.events.some((e) => e.type === 'beforeinput' && e.inputType === 'insertText'), 'must dispatch beforeinput');
+  assert(editor.events.some((e) => e.type === 'input' && e.inputType === 'insertText'), 'must dispatch input');
+
+  // Click 2: toggles off, removing leading "/swarm " and preserving draft.
+  chip.click();
+  assert.strictEqual(editor.textContent, 'refactor auth module', 'second click must remove leading /swarm ');
+  assert.strictEqual(chip.getAttribute('data-active'), 'false', 'chip must return to inactive');
+  assert.strictEqual(chip.getAttribute('aria-pressed'), 'false');
+
+  // Empty editor toggle on & off.
+  editor.textContent = '';
+  chip.click();
+  assert.strictEqual(editor.textContent, '/swarm ', 'empty editor must become "/swarm "');
+  assert.strictEqual(chip.getAttribute('data-active'), 'true');
+  chip.click();
+  assert.strictEqual(editor.textContent, '', 'toggling off empty "/swarm " must clear cleanly');
+  assert.strictEqual(chip.getAttribute('data-active'), 'false');
+}
+
+// 2. Textarea fallback support.
+{
+  const env = createSwarmEnv();
+  const composer = env.doc.createElement('div');
+  const ta = env.doc.createElement('textarea');
+  ta.value = 'fix tests';
+  const footer = env.doc.createElement('div');
+  footer.setAttribute('data-agent-composer-root', '');
+  footer.appendChild(env.doc.createElement('div'));
+  footer.appendChild(env.doc.createElement('div'));
+  composer.appendChild(ta);
+  composer.appendChild(footer);
+  env.body.appendChild(composer);
+
+  env.sandbox.__agSwarmChip.scan();
+  const chip = footer.querySelector('button[data-agy-swarm-chip="true"]');
+  chip.click();
+  assert.strictEqual(ta.value, '/swarm fix tests');
+  assert.strictEqual(ta.selectionStart, '/swarm fix tests'.length);
+  chip.click();
+  assert.strictEqual(ta.value, 'fix tests');
+}
+EOF
+
+    # Behavioral test: agent_notify.js exposes window.nativeNotifications, wraps document.hasFocus(),
+    # suppresses alerts in foreground, dispatches rich background alerts with dedupe, and routes clicks.
+    node - "$TMP/web/generated/patches/agent_notify.js" <<'EOF'
+const fs = require('fs');
+const vm = require('vm');
+const assert = require('assert');
+
+const code = fs.readFileSync(process.argv[2], 'utf8');
+
+let inForeground = true;
+const richCalls = [];
+const settingsCalls = [];
+const sandbox = {
+  console,
+  __AG_NATIVE_BRIDGE_TOKEN__: 'notify-tok',
+  Android: {
+    isInForeground: () => inForeground,
+    notifyAgentEventRich: (tok, type, title, body, convId, notifId, silent) => {
+      richCalls.push({ tok, type, title, body, convId, notifId, silent });
+    },
+    openNotificationSettings: (tok) => {
+      settingsCalls.push(tok);
+    }
+  },
+  document: {
+    visibilityState: 'visible',
+    hasFocus: () => true
+  }
+};
+sandbox.window = sandbox;
+sandbox.self = sandbox;
+sandbox.globalThis = sandbox;
+vm.runInNewContext(code, sandbox);
+
+assert(sandbox.nativeNotifications, 'window.nativeNotifications must be defined');
+assert.strictEqual(typeof sandbox.nativeNotifications.send, 'function');
+assert.strictEqual(typeof sandbox.nativeNotifications.onClicked, 'function');
+assert.strictEqual(typeof sandbox.nativeNotifications.openSystemPreferences, 'function');
+assert.strictEqual(typeof sandbox.__agOpenNotificationConversation, 'function');
+
+// 1. Foreground: document.hasFocus() is true and alerts are suppressed.
+assert.strictEqual(sandbox.document.hasFocus(), true);
+sandbox.nativeNotifications.send({
+  id: 'agent-finished-1',
+  title: 'Done',
+  body: 'Finished task',
+  payload: { cascadeId: 'conv-1' }
+});
+assert.strictEqual(richCalls.length, 0, 'foreground alerts must be suppressed');
+
+// 2. Background: document.hasFocus() becomes false and alerts dispatch via notifyAgentEventRich.
+inForeground = false;
+assert.strictEqual(sandbox.document.hasFocus(), false, 'document.hasFocus() must reflect background state');
+sandbox.nativeNotifications.send({
+  id: 'agent-finished-2',
+  title: 'Done',
+  body: 'Finished background task',
+  payload: { cascadeId: 'conv-2' }
+});
+assert.strictEqual(richCalls.length, 1, 'background alert must dispatch');
+assert.strictEqual(richCalls[0].tok, 'notify-tok');
+assert.strictEqual(richCalls[0].type, 'done');
+assert.strictEqual(richCalls[0].convId, 'conv-2');
+assert.strictEqual(richCalls[0].notifId, 'agent-finished-2');
+
+// 3. Dedupe same notificationId.
+sandbox.nativeNotifications.send({
+  id: 'agent-finished-2',
+  title: 'Done',
+  body: 'Duplicate',
+  payload: { cascadeId: 'conv-2' }
+});
+assert.strictEqual(richCalls.length, 1, 'duplicate notificationId must be deduped');
+
+// 4. Cold-start click buffering + live click routing + openSystemPreferences.
+sandbox.__agOpenNotificationConversation('conv-cold');
+const clicked = [];
+sandbox.nativeNotifications.onClicked((ev) => clicked.push(ev.cascadeId));
+assert.deepStrictEqual(clicked, ['conv-cold'], 'buffered cold-start click must flush on subscribe');
+sandbox.__agOpenNotificationConversation('conv-warm');
+assert.deepStrictEqual(clicked, ['conv-cold', 'conv-warm'], 'warm click must route immediately');
+
+sandbox.nativeNotifications.openSystemPreferences();
+assert.deepStrictEqual(settingsCalls, ['notify-tok'], 'openSystemPreferences must forward token');
 EOF
 fi
 

@@ -110,7 +110,7 @@ The core binary (`language_server`) is compiled for Linux/Glibc and runs on Andr
 
 | Endpoint / Action | Handler | Description |
 | :--- | :--- | :--- |
-| `notify` | `NotificationHandler` | Posts, updates, and cancels Android notifications on `agy_tasks` and `agy_alerts`. |
+| `notify` | `NotificationHandler` | Posts, updates, and cancels Android notifications on `agy_tasks` and `agy_alerts` (`IMPORTANCE_HIGH` with sound/vibration/badge and `EXTRA_CONVERSATION_ID` tap deep-linking). |
 | `open_url` | `BrowserHandler` | Opens external URLs and documents via `UriDispatcher`. |
 | `wakelock` | `PowerHandler` | Acquires and releases named partial wake locks for long-running scripts. |
 | `clipboard` / `clipboard_set` | `ClipboardHandler` | Reads and writes the system clipboard safely on the UI thread. |

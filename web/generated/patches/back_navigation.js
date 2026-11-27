@@ -320,6 +320,35 @@ if (!global.__AG_BACK_NAVIGATION_INSTALLED__) {
     return true;
   }
 
+  function getPathSegments() {
+    if (!global.location || typeof global.location.pathname !== 'string') {
+      return [];
+    }
+    var path = global.location.pathname;
+    if (path === '/' || path === '' || path === '/index.html') {
+      return [];
+    }
+    var raw = path.split('/');
+    var segs = [];
+    for (var i = 0; i < raw.length; i++) {
+      if (raw[i]) segs.push(raw[i]);
+    }
+    return segs;
+  }
+
+  function isTopLevelConversationOrView(segs) {
+    if (segs.length !== 2) return false;
+    var head = segs[0];
+    return head === 'c' || head === 'conversations' || head === 'battle' || head === 'view';
+  }
+
+  function isNestedPath() {
+    var segs = getPathSegments();
+    if (segs.length <= 1) return false;
+    if (isTopLevelConversationOrView(segs)) return false;
+    return true;
+  }
+
   function isClickableBreadcrumbSegment(el) {
     if (!isInteractable(el)) return false;
     if (el.getAttribute && el.getAttribute('aria-current') === 'page') return false;
@@ -334,9 +363,9 @@ if (!global.__AG_BACK_NAVIGATION_INSTALLED__) {
     return false;
   }
 
-  function clickParentBreadcrumb() {
+  function findClickableParentBreadcrumb() {
     if (typeof document === 'undefined' || !document.querySelectorAll) {
-      return false;
+      return null;
     }
     var navs = document.querySelectorAll(BREADCRUMB_NAV_SELECTOR);
     for (var n = navs.length - 1; n >= 0; n--) {
@@ -348,12 +377,110 @@ if (!global.__AG_BACK_NAVIGATION_INSTALLED__) {
       // Only consider strictly parent segments (never the leaf segment).
       for (var i = segments.length - 2; i >= 0; i--) {
         if (isClickableBreadcrumbSegment(segments[i]) && typeof segments[i].click === 'function') {
-          segments[i].click();
-          return true;
+          return segments[i];
         }
       }
     }
+    return null;
+  }
+
+  function hasClickableParentBreadcrumb() {
+    return findClickableParentBreadcrumb() !== null;
+  }
+
+  function clickParentBreadcrumb() {
+    var seg = findClickableParentBreadcrumb();
+    if (seg) {
+      seg.click();
+      return true;
+    }
     return false;
+  }
+
+  var LONG_PRESS_MS = 450;
+  var mobileBackPressStartTs = 0;
+  var mobileBackPressTarget = null;
+  var bypassMobileHomeIntercept = false;
+
+  function findMobileHomeBackTarget(target) {
+    if (!target) return null;
+    if (typeof target.closest === 'function') {
+      return target.closest('[data-testid="mobile-back-to-home"]');
+    }
+    if (target.getAttribute && target.getAttribute('data-testid') === 'mobile-back-to-home') {
+      return target;
+    }
+    return null;
+  }
+
+  function onMobileBackPressStart(e) {
+    if (!e || !e.target) return;
+    var btn = findMobileHomeBackTarget(e.target);
+    if (!btn) return;
+    var now = Date.now();
+    if (mobileBackPressTarget === btn && mobileBackPressStartTs > 0 && (now - mobileBackPressStartTs) < 50) {
+      return;
+    }
+    mobileBackPressTarget = btn;
+    mobileBackPressStartTs = now;
+  }
+
+  function onMobileBackPressCancel() {
+    mobileBackPressTarget = null;
+    mobileBackPressStartTs = 0;
+  }
+
+  function onMobileBackClickCapture(e) {
+    if (!e || !e.target) return;
+    var btn = findMobileHomeBackTarget(e.target);
+    if (!btn) return;
+
+    var startTs = mobileBackPressTarget === btn ? mobileBackPressStartTs : 0;
+    mobileBackPressTarget = null;
+    mobileBackPressStartTs = 0;
+
+    if (bypassMobileHomeIntercept) {
+      return;
+    }
+
+    // Long-press (>= 450ms) jumps straight to Home via native HR() handler.
+    if (startTs > 0 && (Date.now() - startTs) >= LONG_PRESS_MS) {
+      return;
+    }
+
+    // Only intercept on nested sub-routes (depth > 1 or clickable parent breadcrumb).
+    // At top-level routes (/customizations, /c/<id>, /conversations/<id>, etc.),
+    // let native HR() jump straight to Home '/'.
+    var nested = isNestedPath() || hasClickableParentBreadcrumb();
+    if (!nested) {
+      return;
+    }
+
+    var handled = false;
+    if (canStepBackInRouterHistory()) {
+      global.history.back();
+      handled = true;
+    } else if (clickParentBreadcrumb()) {
+      handled = true;
+    }
+
+    if (handled) {
+      if (typeof e.preventDefault === 'function') e.preventDefault();
+      if (typeof e.stopImmediatePropagation === 'function') {
+        e.stopImmediatePropagation();
+      } else if (typeof e.stopPropagation === 'function') {
+        e.stopPropagation();
+      }
+    }
+  }
+
+  if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+    document.addEventListener('pointerdown', onMobileBackPressStart, true);
+    document.addEventListener('touchstart', onMobileBackPressStart, true);
+    document.addEventListener('mousedown', onMobileBackPressStart, true);
+    document.addEventListener('pointercancel', onMobileBackPressCancel, true);
+    document.addEventListener('touchcancel', onMobileBackPressCancel, true);
+    document.addEventListener('click', onMobileBackClickCapture, true);
   }
 
   function handleBack() {
@@ -436,7 +563,12 @@ if (!global.__AG_BACK_NAVIGATION_INSTALLED__) {
       ) {
         var homeBtn = findLastInteractable(document, MOBILE_HOME_BACK_SELECTOR);
         if (homeBtn && typeof homeBtn.click === 'function') {
-          homeBtn.click();
+          bypassMobileHomeIntercept = true;
+          try {
+            homeBtn.click();
+          } finally {
+            bypassMobileHomeIntercept = false;
+          }
           return true;
         }
       }
