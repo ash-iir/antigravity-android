@@ -1,3 +1,20 @@
+# Antigravity for Android v2.34.18
+
+## Release Packages
+
+| Package | Application ID | Runtime Port | Description |
+| :--- | :--- | :--- | :--- |
+| **`antigravity.apk`** | `com.agy` | 45157 | Standard production release with original Google account checks. |
+| **`antigravity-region-bypass.apk`** | `com.agy` | 45157 | Region-bypass edition with account eligibility check bypass. |
+| **`SHA256SUMS.txt`** | — | — | Cryptographic SHA-256 checksums for verification. |
+
+## Changes & Fixes (v2.34.18)
+
+### 1. Swarm Graph / Hive View WebView Rendering Fix
+* **Eliminate Duplicate/Ghosting Bees & Text:** Fix duplicate/offset bees and text ghosting in the Swarm **Graph / Hive** tab on Android WebView: memoize Hive/Mentions SVG & bee transforms (`dataset.tf`), isolate `.hv-stage`/`.hv-svg`/`.hv-bees` compositor layers, skip `.hv` panes in `snapBees()`, prune duplicate `.hv-bee` nodes, and coalesce `ResizeObserver` callbacks into a single rAF.
+
+---
+
 # Antigravity for Android v2.34.17
 
 ## Release Packages
