@@ -68,3 +68,6 @@ src/patches/back_navigation/install.js
 
 bundle iife patches/github_device_auth.js
 src/patches/github_device_auth/install.js
+
+bundle iife patches/account_switcher.js
+src/patches/account_switcher/install.js

@@ -176,8 +176,10 @@ jobs:
             * **Swarm Plugin & Node.js Reliability:** Added dynamic `node` shell bridge resolution, `nodejs-lts` auto-seeding in `env/seed-packages.txt`, `pkg` fallback wrapper overwrite on install, and post-startup builtin plugin sync so Swarm sidecars start cleanly out of the box.
             * **Background-Resume Stuck UI Fix:** Kept WebView and SSE streams alive when backgrounded and added host-resume stalled state stream force-reset across `MainActivity`, `WebViewLifecycle`, and `bridge.core.js`, preventing frozen UI after switching apps.
 
-            ### Earlier Highlights (v2.34.13)
+            ### Earlier & Upstream Highlights (v2.34.13–v2.34.15)
 
+            * **Settings → Account Fix:** Fixed `patch_main.py` hook placement and variable shadowing in the Account screen (`GOb`) so tapping the Account profile row opens smoothly alongside **Settings → Accounts**.
+            * **Account Vault & Instant Switcher:** Added **Settings → Accounts** and **Settings → Account → Saved Accounts** matching the native Settings design system, automatically saving logged-in credentials in an owner-only (`0600`) vault (`AccountVaultStore`) and enabling one-tap in-place account switching.
             * **Clean UI Overlay:** Removed the floating `AGY` pill and `QuickControlSheet` (`Antigravity Control`) modal overlay for an unobstructed chat workspace.
             * **Faster `pkg` Package Manager (`pkg_core.py`):** Mtime-cached `dpkg`/`Packages` indexing, full DFS dependency & upgrade planning with disk-space preflight, conditional `curl -z` updates, parallel `curl -Z --http2` downloads with per-file SHA256 mirror fallback, single-pass staged `.deb` validation/extraction with byte-length-preserving ELF prefix rewriting, `--keep-cache` flag, and de-prioritized `tuna` fallback in `repo.conf`.
             * **Security Hardening & Lifecycle Stability:** Per-boot bearer token auth in `SystemGatewayServer`, token gating on mutating `AndroidBridge` calls, bounded `/exec` concurrency and timeouts, loopback core TLS pinning in WebView, persistent `fcntl.flock` on `daemon.lock` + deduplicated logging in `agy-daemon`, `SplashController` WebView teardown on dismiss, clickable `ForegroundNotification` resume intent, and capped crash/stderr logs.

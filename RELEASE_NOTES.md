@@ -76,6 +76,9 @@
 ### 3. Built-in Multi-Account GitHub Plugin
 * **Local GitHub Plugin (`plugins/github/`):** Bundled a built-in multi-account GitHub plugin under **Customizations → Plugins**, supporting labeled accounts with PAT authentication and `GH_TOKEN` / `GITHUB_TOKEN` environment variable delivery.
 
+### 4. Settings → Account Screen Fix (Upstream)
+* Fixed a `web/patch_main.py` hook scoping bug where `GOb` (`Settings → Account`) failed to initialize `_agStore`/`_agRefreshStatus` and received shadowed local state, causing a blank screen when tapping the profile row.
+
 ---
 
 # Antigravity for Android v2.34.14
@@ -95,6 +98,11 @@
 
 ### 2. Background-Resume Stuck UI Fix
 * **Stream Continuity & Host Resume Recovery:** Kept WebView/SSE connections alive across app backgrounding and added host-resume stalled state stream force-reset in `bridge.core.js` / `MainActivity` / `WebViewLifecycle`, eliminating frozen or stuck chat/agent UI when returning to the app.
+
+### 3. Multi-Account Vault & Instant Switcher in Settings (Upstream)
+* **Native Settings Integration (`Accounts` & `Account` → `Saved Accounts`):** Added an **Accounts** screen in Settings and embedded **Saved Accounts** inside the **Account** screen using the native Settings UI primitives (`LU`/`PU`/`NU`/`OU`/`BI`/`Dgb`), displaying every account ever signed into with avatar, name, email, tier badge, and active status.
+* **Owner-Only Credential Vault (`AccountVaultStore`):** Automatically snapshots `jetski-standalone-oauth-token` and profile metadata on every login (`0600` permissions in `$HOME/.gemini/agy-account-vault.json`) without ever exposing raw tokens to WebView JavaScript.
+* **Instant In-Place Switching:** Switches accounts in place by evicting core auth caches, atomically activating the saved token on disk, refreshing `checkCurrentAuthStatus()` and `userStatus` without leaving Settings, and cleanly falling back to core restart if needed.
 
 ---
 

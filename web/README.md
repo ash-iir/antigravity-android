@@ -83,6 +83,7 @@ web/
 │       ├── clipboard_image_paste.js
 │       ├── back_navigation.js
 │       ├── github_device_auth.js
+│       ├── account_switcher.js
 │       └── startup_ready.js
 ├── src/                          # Modular source fragments
 │   ├── boot/                     # Early boot fragments
@@ -117,6 +118,7 @@ web/
 | **`patches/clipboard_image_paste.js`** | IIFE | ~5.8 KB | Handles clipboard and IME (`commitContent`) image paste into the chat composer. |
 | **`patches/back_navigation.js`** | IIFE | ~15.4 KB | Exposes `window.__agHandleBack()` for step-by-step Android Back across Settings/Customizations overlays (ancestor z-index, Back/Close/Escape), in-layout back controls, renderer-initiated `window.history.back()` (`__TSR_index > 0`), breadcrumb fallback, and clean Home `'exit'` signaling. |
 | **`patches/github_device_auth.js`** | IIFE | ~31 KB | Injects 1-tap direct GitHub browser login (OAuth 2.0 Device Flow via `AndroidBridge`) into the `GitHub (Local)` Accounts card for both initial sign-in and multi-account "Add account", preserving manual PAT paste. |
+| **`patches/account_switcher.js`** | IIFE | ~16.7 KB | Renders Settings -> Accounts and Account -> Saved Accounts using native Settings primitives (`LU`/`PU`/`NU`/`OU`/`BI`/`Dgb`), auto-syncs logged-in accounts, and performs instant hot-swap switching. |
 | **`patches/startup_ready.js`** | IIFE | ~4.7 KB | Signals first meaningful DOM render (`onUiReady`) and captures fatal JS errors. |
 | **`main.js`** | Raw + Patch | ~9.5 MB | Production React bundle patched by `patch_main.py`. |
 
@@ -128,7 +130,8 @@ web/
 
 [`patch_main.py`](patch_main.py) idempotently updates `web/generated/main.js`:
 1. **Desktop Mode Toggle:** Injects `useState`/`useCallback` hooks in Appearance settings bound to `window.Android.isDesktopMode()` and token-gated `window.Android.setDesktopMode(token, v)`, inserting a Desktop Mode `Switch` under `{label:"Theme"}`. Also upgrades legacy unauthenticated `setDesktopMode(v)` calls in patched bundles to include `window.__AG_NATIVE_BRIDGE_TOKEN__`.
-2. **Monochrome `Eza` Logo:** Replaces hardcoded multicolor SVG fills with theme-aware `text-[#9AA0A6]` / `text-[#5F6368]` strokes.
+2. **Account Switcher & Auto-Vault:** Registers the `Accounts` screen in Settings navigation, embeds `Saved Accounts` inside the `Account` screen (`GOb`), and hooks `getUserStatus` sync (`I_b`) to capture signed-in accounts automatically.
+3. **Monochrome `Eza` Logo:** Replaces hardcoded multicolor SVG fills with theme-aware `text-[#9AA0A6]` / `text-[#5F6368]` strokes.
 
 ---
 
@@ -156,6 +159,11 @@ web/
 | `pollGitHubDeviceAuth` | `(token, reqId, deviceCode) => void` | Polls `https://github.com/login/oauth/access_token` asynchronously and delivers status/token via `window.__agGitHubDeviceAuthCallback(reqId, json)`. |
 | `openGitHubDevicePage` | `(token, verificationUri) => boolean` | Opens GitHub's device verification page (locked to `https://github.com/login/device`) in the external browser. |
 | `copyGitHubDeviceCode` | `(token, userCode) => boolean` | Copies the 8-character GitHub device code to Android's clipboard on the UI thread. |
+| `getSavedAccounts` | `(token) => string` | Returns sanitized JSON array of saved accounts (no tokens exposed to JS). |
+| `syncCurrentAccount` | `(token, profileJson) => string` | Syncs the active token snapshot and UI profile metadata into `AccountVaultStore`. |
+| `activateSavedAccount` | `(token, accountId, outgoingProfileJson) => string` | Saves outgoing account state and atomically activates the target account's token on disk. |
+| `removeSavedAccount` | `(token, accountId) => string` | Removes a saved account from the persistent vault. |
+| `restartCoreForAccountSwitch` | `(token) => void` | Clean core service restart fallback if hot-swap verification detects stale server state. |
 
 ---
 

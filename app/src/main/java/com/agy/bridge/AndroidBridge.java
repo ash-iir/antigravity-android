@@ -307,6 +307,59 @@ public final class AndroidBridge {
         });
     }
 
+    /** Returns sanitized saved account summaries for the top-level UI document. */
+    @JavascriptInterface
+    public String getSavedAccounts(String token) {
+        if (!matchesNativeBridgeToken(token)) {
+            return "[]";
+        }
+        return com.agy.oauth.AccountVaultStore.listAccountsJson(appContext);
+    }
+
+    /** Syncs the currently active OAuth token and optional UI profile metadata into the vault. */
+    @JavascriptInterface
+    public String syncCurrentAccount(String token, String profileJson) {
+        if (!matchesNativeBridgeToken(token)) {
+            return "[]";
+        }
+        return com.agy.oauth.AccountVaultStore.syncCurrentAccount(appContext, profileJson);
+    }
+
+    /** Atomically switches the active OAuth token on disk to the selected saved account. */
+    @JavascriptInterface
+    public String activateSavedAccount(String token, String accountId, String outgoingProfileJson) {
+        if (!matchesNativeBridgeToken(token)) {
+            return "{\"ok\":false,\"error\":\"Unauthorized bridge call\"}";
+        }
+        return com.agy.oauth.AccountVaultStore.activateAccount(appContext, accountId, outgoingProfileJson);
+    }
+
+    /** Removes a saved account from the persistent vault. */
+    @JavascriptInterface
+    public String removeSavedAccount(String token, String accountId) {
+        if (!matchesNativeBridgeToken(token)) {
+            return "[]";
+        }
+        return com.agy.oauth.AccountVaultStore.removeAccount(appContext, accountId);
+    }
+
+    /** Cleanly restarts the core service and reloads WebView if hot-swap verification requires it. */
+    @JavascriptInterface
+    public void restartCoreForAccountSwitch(String token) {
+        if (!matchesNativeBridgeToken(token)) {
+            return;
+        }
+        final MainActivity act = activityRef != null ? activityRef.get() : MainActivity.activeActivity;
+        if (act != null) {
+            act.runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    act.restartCoreForAccountSwitch();
+                }
+            });
+        }
+    }
+
     private boolean matchesNativeBridgeToken(String candidate) {
         if (candidate == null) {
             return false;
