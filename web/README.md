@@ -112,8 +112,8 @@ web/
 | **`boot/custom-elements-guard.js`** | IIFE | ~514 B | Guards against duplicate CustomElement registration crashes. |
 | **`boot/theme-bootstrap.js`** | IIFE | ~1.3 KB | Applies `light`/`dark` class and `colorScheme` synchronously before first paint. |
 | **`bridge.core.js`** | IIFE | ~16 KB | Polyfills `window.process`, config, CSRF, endpoint discovery, and `fetch` retry/stream recovery. |
-| **`patches/web_optimizations.js`** | IIFE | ~8.7 KB | Disables 300 ms tap delay, tracks `visualViewport` (`--agy-vvh`), limits GPU layer hints, and applies container-responsive Flexbox & mobile Plugins/Accounts layout fixes. |
-| **`patches/touch_model_menu.js`** | IIFE | ~6.7 KB | Adapts hover-only Base UI model reasoning dropdowns to touch tap sequences. |
+| **`patches/web_optimizations.js`** | IIFE | ~9.3 KB | Disables 300 ms tap delay, tracks `visualViewport` (`--agy-vvh`), disables expensive mobile `backdrop-filter` blurs, isolates list layout (`content-visibility`), and applies container-responsive Flexbox & mobile Plugins/Accounts layout fixes. |
+| **`patches/touch_model_menu.js`** | IIFE | ~7.5 KB | Adapts hover-only Base UI model reasoning dropdowns to touch tap sequences with mutation-filtered observation (ignoring chat prose/code streaming). |
 | **`patches/theme_sync.js`** | IIFE | ~4.8 KB | Observes `<html>`/`<body>` theme classes and forwards token-gated changes to `AndroidBridge`. |
 | **`patches/agent_notify.js`** | IIFE | ~6.9 KB | Implements `window.nativeNotifications` (`send`, `onClicked` with cold-start buffering, `openSystemPreferences`), syncs `document.hasFocus()` to host foreground state, and bridges background agent completion/reply/approval alerts (plus `window.Notification` fallback) to clickable Android notifications with conversation deep-linking. |
 | **`patches/clipboard_image_paste.js`** | IIFE | ~5.8 KB | Handles clipboard and IME (`commitContent`) image paste into the chat composer. |

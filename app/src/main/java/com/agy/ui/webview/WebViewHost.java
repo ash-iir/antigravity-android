@@ -19,6 +19,7 @@ public final class WebViewHost {
 
     public interface Listener {
         void onPageFinished(String url);
+
         default void onRenderProcessGone(boolean didCrash) {
         }
     }
@@ -40,7 +41,7 @@ public final class WebViewHost {
         this.webView.setWebChromeClient(new AgyWebChromeClient(
                 new PopupWindowHandler(context, oauth), fileChooserCallback));
         this.webView.setWebViewClient(new AgyWebViewClient(
-                context, oauth, new LocalAssetServer(), bridge, new Listener() {
+                context, oauth, new LocalAssetServer(context), bridge, new Listener() {
             @Override
             public void onPageFinished(String url) {
                 if (WebViewHost.this.listener != null) {

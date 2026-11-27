@@ -87,7 +87,7 @@ flowchart TD
 - Compiles with `javac -encoding UTF-8 -source 1.8 -target 1.8 -cp tools/android.jar @$BUILD_DIR/java_sources.txt`.
 
 ### Stage 04: D8 Dexing (`04_dex.sh`)
-- Lists `.class` files in `@$BUILD_DIR/class_files.txt` and builds `classes.dex` using standalone D8 (`com.android.tools.r8.D8` in `tools/r8.jar`) with `--min-api 24`.
+- Lists `.class` files in `@$BUILD_DIR/class_files.txt` and builds `classes.dex` using standalone D8 (`com.android.tools.r8.D8` in `tools/r8.jar`) with `--min-api 24`, passing `--release` for standard builds and `--debug` when `DEV_MODE=1`.
 
 ### Stage 05: Asset Staging (`05_stage_assets.py`)
 - Stages three asset groups into `build/staging/assets/`:

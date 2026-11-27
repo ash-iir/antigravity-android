@@ -81,9 +81,11 @@ The core binary (`language_server`) is compiled for Linux/Glibc and runs on Andr
   - Runs Phase 1 extraction/verification and launches `language_server`.
   - Uses `killOrphanCoreProcesses()` to scan `/proc` and terminate stale orphan `language_server` processes before launch, preventing `EADDRINUSE` on fixed loopback ports (`45157`/`45158`).
 - **`CoreProcessSupervisor`**:
-  - Runs `language_server` on `CoreServerThread`, streaming stdout to `files/logs/core.log` (1.5 MB rotation) and stderr to `files/logs/core_stderr.log` (512 KB cap/rotation) via `SensitiveDataRedactor` and `LogRingBuffer`.
+  - Runs `language_server` on `CoreServerThread`, streaming stdout to `files/logs/core.log` (buffered in-session 1.5 MB rotation) and stderr to `files/logs/core_stderr.log` (512 KB cap) via single-pass `SensitiveDataRedactor` and `LogRingBuffer` (`ArrayDeque`), with `CoreRuntimeState` listener notifications eliminating steady-state UI polling.
   - Implements exponential backoff restarts (`CoreRestartPolicy`, up to 3 restarts; crash counter resets after `SUSTAINED_READY_MS` = 60 s).
   - Writes fatal crash snapshots via `CrashRecorder` (pruned to the newest 10 `crash_*.json` files).
+- **`CoreEnvironment`**:
+  - Sets RAM-scaled `GOMEMLIMIT` (`448MiB`–`1536MiB`) and `GOGC`, gates `--enable_sidecars` at `>= 5.5 GB` RAM (protecting 4 GB mid-range devices), and applies granular ARMv8 `GODEBUG` feature flags so hardware AES/SHA stays active when LSE `atomics` are absent.
 - **`CoreReadyProbe`**:
   - Polls local HTTPS readiness up to 60 seconds (`READY_TIMEOUT_MS = 60000`) for slow ARMv8.0-A cold starts.
   - Verifies exact SHA-256 leaf pinning against `@raw/agy_core_cert` via `matchesCert()`, invoked by `AgyWebViewClient.onReceivedSslError` alongside `TrustedCoreOrigin.matches()`.
@@ -155,3 +157,6 @@ Removed unused classes: `ShellBridge`, `ExternalUrlBridge`, `NotificationBridge`
 - **`ExecHandler` + `rish` integration:** Locates `$PREFIX/bin/rish` / `files/runtime/bin/rish`, exports `RISH_APPLICATION_ID`, and strips conflicting `LD_LIBRARY_PATH`.
 - **Dynamic external storage resolution:** Replaced hardcoded `/storage/emulated/0/` in `DocumentsContractHelper` and `LogExporter` with `Environment.getExternalStorageDirectory().getAbsolutePath()` for multi-user/Work Profile compatibility.
 - **`AppFileProvider` path validation:** Validates canonical paths (`getCanonicalPath()`) against sandbox roots (`filesDir`, `cacheDir`, `dataDir`, external storage) before serving URIs.
+- **WebView Resilience & Lifecycle (`AgyWebViewClient`, `WebViewFactory`, `AppLifecycle`):**
+  - Configures `RENDERER_PRIORITY_BOUND` (`waivedWhenNotVisible = true`) and handles `onRenderProcessGone` by destroying and recreating the `WebView` seamlessly instead of crashing on mid-range LMKD renderer kills.
+  - Caches canonical asset paths in `LocalAssetServer`, debounces/dedupes DNS writes in `NetworkMonitorHolder`/`NetworkConfigWriter`, and trims WebView memory on `TRIM_MEMORY_RUNNING_LOW`/`CRITICAL` and `TRIM_MEMORY_BACKGROUND`.

@@ -20,6 +20,7 @@ public final class WakeLockHolder {
             if (pm != null) {
                 if (wakeLock == null) {
                     wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "agy::core");
+                    wakeLock.setReferenceCounted(false);
                 }
                 if (!wakeLock.isHeld()) {
                     wakeLock.acquire();

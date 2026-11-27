@@ -1,3 +1,43 @@
+# Antigravity for Android v2.35.3
+
+## Release Packages
+
+| Package | Application ID | Runtime Port | Description |
+| :--- | :--- | :--- | :--- |
+| **`antigravity.apk`** | `com.agy` | 45157 | Standard production release with original Google account checks. |
+| **`antigravity-region-bypass.apk`** | `com.agy` | 45157 | Region-bypass edition with account eligibility check bypass. |
+| **`SHA256SUMS.txt`** | — | — | Cryptographic SHA-256 checksums for verification. |
+
+## Changes & Fixes (v2.35.3)
+
+### 1. Startup Crash Fix
+* Fixed an `IllegalStateException` crash on launch in `MainActivity.onCreate` caused by attaching `SplashController`'s container to `rootLayout` twice after the `NativeSplashDotsView` refactor in `v2.35.2`.
+
+---
+
+# Antigravity for Android v2.35.2
+
+## Release Packages
+
+| Package | Application ID | Runtime Port | Description |
+| :--- | :--- | :--- | :--- |
+| **`antigravity.apk`** | `com.agy` | 45157 | Standard production release with original Google account checks. |
+| **`antigravity-region-bypass.apk`** | `com.agy` | 45157 | Region-bypass edition with account eligibility check bypass. |
+| **`SHA256SUMS.txt`** | — | — | Cryptographic SHA-256 checksums for verification. |
+
+## Changes & Fixes (v2.35.2)
+
+### 1. Upstream Antigravity 2.35.2 Core & Web UI
+* Updated core `language_server` (`2.35.2-4585983447007232`) and web UI assets (`main.js`, `compiled_tailwind.css`, `shiki_worker.js`, `page_agent_bundle.js`, `page_facade_bundle.js`, `prism/`, `voices/`).
+* Updated `pidfd`, `crash_suppressor`, and `resolv_redirect` ELF patches for `2.35.2`, adding dynamic ELF `.rela.dyn` fallback resolution for `net.defaultNS`.
+
+### 2. Mid-Range Device & Long-Session Performance Optimizations
+* **WebView Resilience & Native Splash:** Implemented `onRenderProcessGone` auto-recovery and switched `SplashController` to `NativeSplashDotsView` (saving ~40 MB RAM on startup), while keeping `RENDERER_PRIORITY_IMPORTANT` for background stream continuity.
+* **Go Memory & ARMv8.0 Tuning:** Added RAM-scaled `GOMEMLIMIT`/`GOGC`, raised `--enable_sidecars` threshold to 5.5 GB RAM, and applied granular `GODEBUG` crypto flags so hardware AES/SHA stays active when LSE `atomics` are absent.
+* **Reduced I/O, GPU & Background Overhead:** Added buffered in-session `core.log` rotation, debounced/deduped `NetworkConfigWriter`, cached `LocalAssetServer` paths, disabled mobile `backdrop-filter` blurs in `gpu.js`, filtered streaming `#root` mutations in `touch_model_menu`, added adaptive idle sleep + log rotation to `agy-daemon`, switched ring buffers to `ArrayDeque`, and enabled `D8 --release` dexing.
+
+---
+
 # Antigravity for Android v2.34.22
 
 ## Release Packages

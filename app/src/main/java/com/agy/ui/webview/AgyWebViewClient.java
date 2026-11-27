@@ -190,13 +190,16 @@ public final class AgyWebViewClient extends WebViewClient {
     @Override
     @TargetApi(Build.VERSION_CODES.O)
     public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {
-        boolean didCrash = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
-                && detail != null && detail.didCrash();
-        Log.e(TAG, "WebView render process gone (didCrash=" + didCrash + ")");
+        boolean didCrash = false;
+        int priority = -1;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && detail != null) {
+            didCrash = detail.didCrash();
+            priority = detail.rendererPriorityAtExit();
+        }
+        Log.e(TAG, "WebView renderer process gone (didCrash=" + didCrash + ", priority=" + priority + "); recovering");
         if (listener != null) {
             listener.onRenderProcessGone(didCrash);
-            return true;
         }
-        return false;
+        return true;
     }
 }

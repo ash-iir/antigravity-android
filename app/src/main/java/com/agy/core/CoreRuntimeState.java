@@ -5,6 +5,8 @@ import com.agy.runtime.RuntimeConfig;
 /** Cross-component state shared by the service, the bridge and the UI. */
 public final class CoreRuntimeState {
 
+    private static volatile Runnable stateListener;
+
     private CoreRuntimeState() {
     }
 
@@ -19,4 +21,15 @@ public final class CoreRuntimeState {
     public static volatile boolean restarting = false;
     /** Bumped on every successful ready; the UI reloads the app when it changes. */
     public static volatile int readyGeneration = 0;
+
+    public static void setStateListener(Runnable listener) {
+        stateListener = listener;
+    }
+
+    public static void notifyChanged() {
+        Runnable listener = stateListener;
+        if (listener != null) {
+            listener.run();
+        }
+    }
 }

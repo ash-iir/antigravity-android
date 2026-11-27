@@ -1,23 +1,24 @@
 /**
  * patches/web_optimizations/gpu.js - GPU-accelerate scroll/animation surfaces,
- * isolate layout for lists, and optimize mobile touch & plugin UI.
+ * isolate layout for lists, disable expensive mobile backdrop blurs, and
+ * optimize mobile touch & plugin UI.
  */
 function installGpu(doc) {
   try {
     if (!doc.querySelector('style[data-agy="gpu-acceleration"]')) {
       var gpu = doc.createElement('style');
       gpu.setAttribute('data-agy', 'gpu-acceleration');
-      // Promote ONLY the real scroll containers with contain: strict / content-visibility
-      // for 120Hz smooth scrolling on mobile GPUs.
+      // Promote ONLY the real scroll containers with contain: layout style paint /
+      // content-visibility for smooth scrolling on mid-range mobile GPUs.
       gpu.textContent =
         'main, [data-testid="chat-container"], .scrollable {' +
         ' -webkit-overflow-scrolling: touch;' +
         ' overscroll-behavior-y: contain;' +
         ' touch-action: pan-y pinch-zoom; }' +
-        '[role="listitem"], .message-row, .artifact-viewer {' +
+        '[role="listitem"], .message-row, .artifact-viewer, .agy-sidebar-row {' +
         ' contain: layout style paint;' +
         ' content-visibility: auto;' +
-        ' contain-intrinsic-size: auto 60px; }' +
+        ' contain-intrinsic-size: auto 120px; }' +
         '*{ -webkit-tap-highlight-color: transparent; }' +
         /* Container-responsive Flexbox fixes for Plugin Accounts & MCP error rows:
          * Upstream uses flex-wrap + min-w-0 flex-1 (flex-basis: 0%) next to fixed-width
@@ -32,6 +33,17 @@ function installGpu(doc) {
         ' flex: 1 1 160px !important; min-width: min(100%, 160px) !important; }' +
         '[data-testid="mcp-server-row"] div.flex-wrap > div.flex-1 {' +
         ' flex: 1 1 200px !important; min-width: min(100%, 200px) !important; }' +
+        /* Eliminate expensive full-screen backdrop blur passes on mid-range mobile GPUs */
+        '@media (max-width: 768px), (pointer: coarse) {' +
+        ' .surface-glass, .agy-fastpick.surface-glass, .quick-input-widget.surface-glass,' +
+        ' .surface-composer > .surface-composer-card, [class*="backdrop-blur"] {' +
+        '   -webkit-backdrop-filter: none !important;' +
+        '   backdrop-filter: none !important; }' +
+        ' body[data-agy-theme] .surface-glass,' +
+        ' body[data-agy-theme] .agy-fastpick.surface-glass,' +
+        ' body[data-agy-theme] .quick-input-widget.surface-glass {' +
+        '   background-color: var(--card, #18181b) !important; }' +
+        '}' +
         /* Mobile Customizations & Plugin / Sidecar UI Optimizations */
         '@media (max-width: 640px) {' +
         ' [data-testid="plugin-detail"] > div > div,' +

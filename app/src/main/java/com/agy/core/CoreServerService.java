@@ -214,6 +214,7 @@ public final class CoreServerService extends Service {
                 if (CoreRuntimeState.lastError == null) {
                     CoreRuntimeState.lastError = "core supervisor stopped unexpectedly";
                 }
+                CoreRuntimeState.notifyChanged();
                 if (wakeLock != null) {
                     wakeLock.release();
                 }
@@ -253,6 +254,7 @@ public final class CoreServerService extends Service {
         CoreRuntimeState.serverUrl = null;
         CoreRuntimeState.lastError = null;
         CoreRuntimeState.restarting = false;
+        CoreRuntimeState.notifyChanged();
         super.onDestroy();
     }
 

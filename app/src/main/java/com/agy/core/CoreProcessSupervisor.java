@@ -4,6 +4,7 @@ import android.content.Context;
 import android.text.TextUtils;
 import android.util.Log;
 
+import com.agy.BuildConfig;
 import com.agy.runtime.RuntimeManager;
 import com.agy.util.CoreUrl;
 import com.agy.util.ErrorText;
@@ -12,7 +13,6 @@ import com.agy.util.SensitiveDataRedactor;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
-import java.io.Writer;
 
 /**
  * Supervises the core for its whole life. One pass = install, launch, wait for
@@ -76,17 +76,18 @@ public final class CoreProcessSupervisor {
     private void runCoreLoop() {
         int attempt = 0;
         while (!stopping) {
-            Writer log = CoreLogWriter.open(appContext.getFilesDir());
-            Writer errLog = CoreLogWriter.open(appContext.getFilesDir(), "core_stderr.log", CoreLogWriter.STDERR_MAX_BYTES);
+            CoreLogWriter.RotatingWriter log = CoreLogWriter.open(appContext.getFilesDir());
+            CoreLogWriter.RotatingWriter errLog = CoreLogWriter.open(appContext.getFilesDir(), "core_stderr.log", CoreLogWriter.STDERR_MAX_BYTES);
             try {
                 CoreRuntimeState.lastError = null;
                 CoreRuntimeState.restarting = false;
+                CoreRuntimeState.notifyChanged();
                 CoreLogWriter.writeLine(log, "\n=== Antigravity Core Launch (attempt " + (attempt + 1) + ") ===");
                 Process proc = CoreLauncher.launch(runtime, appContext.getFilesDir());
                 process = proc;
 
-                final Writer streamWriter = log;
-                final Writer errWriter = errLog;
+                final CoreLogWriter.RotatingWriter streamWriter = log;
+                final CoreLogWriter.RotatingWriter errWriter = errLog;
                 Thread streamer = new Thread(() -> streamOutput(proc, streamWriter), "CoreStreamThread");
                 Thread errStreamer = new Thread(() -> streamStderr(proc, errWriter), "CoreStderrThread");
                 streamer.setDaemon(true);
@@ -120,6 +121,7 @@ public final class CoreProcessSupervisor {
                         CoreRuntimeState.lastError = "core failed to start after " + CoreRestartPolicy.MAX_RESTARTS
                                 + " attempts (last exit code " + code + describeExitCode(code, appContext.getFilesDir()) + ")"
                                 + (tail.isEmpty() ? "" : "\n--- core.log tail ---\n" + tail);
+                        CoreRuntimeState.notifyChanged();
                         CoreLogWriter.writeLine(log, CoreRuntimeState.lastError);
                         com.agy.log.CrashRecorder.recordCrash(appContext, code, 0, CoreRuntimeState.lastError, logBuffer);
                         break;
@@ -130,6 +132,7 @@ public final class CoreProcessSupervisor {
                             + "); retrying in " + (delay / 1000) + "s (attempt "
                             + attempt + "/" + CoreRestartPolicy.MAX_RESTARTS + ")"
                             + (tail.isEmpty() ? "" : "\n--- core.log tail ---\n" + tail);
+                    CoreRuntimeState.notifyChanged();
                     Log.w(TAG, CoreRuntimeState.lastError);
                     CoreLogWriter.writeLine(log, CoreRuntimeState.lastError);
                     com.agy.log.CrashRecorder.recordCrash(appContext, code, 0, CoreRuntimeState.lastError, logBuffer);
@@ -168,6 +171,7 @@ public final class CoreProcessSupervisor {
                     CoreRuntimeState.lastError = "core crashed " + CoreRestartPolicy.MAX_RESTARTS
                             + " times; giving up (last exit code " + code + exitDesc + ")"
                             + (tail.isEmpty() ? "" : "\n--- core.log tail ---\n" + tail);
+                    CoreRuntimeState.notifyChanged();
                     CoreLogWriter.writeLine(log, CoreRuntimeState.lastError);
                     com.agy.log.CrashRecorder.recordCrash(appContext, code, System.currentTimeMillis() - readyAt, CoreRuntimeState.lastError, logBuffer);
                     break;
@@ -178,6 +182,7 @@ public final class CoreProcessSupervisor {
                         + "); restarting in " + (delay / 1000) + "s (attempt "
                         + attempt + "/" + CoreRestartPolicy.MAX_RESTARTS + ")"
                         + (tail.isEmpty() ? "" : "\n--- core.log tail ---\n" + tail);
+                CoreRuntimeState.notifyChanged();
                 Log.w(TAG, CoreRuntimeState.lastError);
                 CoreLogWriter.writeLine(log, CoreRuntimeState.lastError);
                 com.agy.log.CrashRecorder.recordCrash(appContext, code, System.currentTimeMillis() - readyAt, CoreRuntimeState.lastError, logBuffer);
@@ -190,6 +195,7 @@ public final class CoreProcessSupervisor {
                 }
                 Log.e(TAG, "core start failed", e);
                 CoreRuntimeState.lastError = ErrorText.describe(e);
+                CoreRuntimeState.notifyChanged();
                 CoreLogWriter.writeLine(log, "core start failed: " + CoreRuntimeState.lastError);
                 // install/launch failure: fail-closed, user retries from the splash.
                 break;
@@ -200,7 +206,7 @@ public final class CoreProcessSupervisor {
         }
     }
 
-    private boolean waitForReady(Process proc, Writer log) {
+    private boolean waitForReady(Process proc, CoreLogWriter.RotatingWriter log) {
         long start = System.currentTimeMillis();
         String csrf = runtime.getCsrfToken();
         int port = CoreRuntimeState.httpsPort;
@@ -214,6 +220,7 @@ public final class CoreProcessSupervisor {
                 String lastLogs = getLastLinesFromLog(appContext.getFilesDir(), 10);
                 CoreRuntimeState.lastError = "core process exited before it became ready (exit code " + code + ")"
                         + (lastLogs.isEmpty() ? "" : "\n--- core.log tail ---\n" + lastLogs);
+                CoreRuntimeState.notifyChanged();
                 CoreLogWriter.writeLine(log, CoreRuntimeState.lastError);
                 return false;
             }
@@ -222,6 +229,7 @@ public final class CoreProcessSupervisor {
                 CoreRuntimeState.lastError = null;
                 CoreRuntimeState.restarting = false;
                 CoreRuntimeState.readyGeneration++;
+                CoreRuntimeState.notifyChanged();
                 String readyStatus = "core ready on 127.0.0.1:" + port;
                 Log.i(TAG, readyStatus);
                 CoreLogWriter.writeLine(log, readyStatus);
@@ -232,33 +240,30 @@ public final class CoreProcessSupervisor {
         return false;
     }
 
-    private void streamOutput(Process proc, Writer log) {
+    private void streamOutput(Process proc, CoreLogWriter.RotatingWriter log) {
         pumpStream(proc.getInputStream(), log, true, false);
     }
 
-    private void streamStderr(Process proc, Writer errLog) {
+    private void streamStderr(Process proc, CoreLogWriter.RotatingWriter errLog) {
         pumpStream(proc.getErrorStream(), errLog, false, true);
     }
 
-    private void pumpStream(java.io.InputStream in, Writer target, boolean watchOpenUrl, boolean stderr) {
+    private void pumpStream(java.io.InputStream in, CoreLogWriter.RotatingWriter target, boolean watchOpenUrl, boolean stderr) {
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(in))) {
             String line;
-            long writtenBytes = 0;
             while ((line = reader.readLine()) != null) {
                 String safeLine = SensitiveDataRedactor.redactLine(line);
                 if (stderr) {
                     Log.w(TAG, "[stderr] " + safeLine);
-                    // Cap single-session writes to avoid unbounded growth during long runs
-                    if (writtenBytes < CoreLogWriter.STDERR_MAX_BYTES) {
-                        CoreLogWriter.writeLine(target, safeLine);
-                        writtenBytes += safeLine.length() + 1;
-                    }
+                    CoreLogWriter.writeRedactedLine(target, safeLine);
                 } else {
-                    Log.d(TAG, safeLine);
+                    if (BuildConfig.DEBUG) {
+                        Log.d(TAG, safeLine);
+                    }
                     if (logBuffer != null) {
                         logBuffer.appendLine(safeLine);
                     }
-                    CoreLogWriter.writeLine(target, safeLine);
+                    CoreLogWriter.writeRedactedLine(target, safeLine);
                 }
                 if (watchOpenUrl) {
                     openUrlWatcher.handleStreamLine(line);

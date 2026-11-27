@@ -38,7 +38,7 @@ def run_pipeline():
     archive_path = os.path.join(CORE_DIR, "pristine", "language_server.tar.gz")
     assert os.path.isfile(archive_path), f"Missing archive: {archive_path}"
     
-    expected_archive_sha = "dd0a6b299892246957c808b8c85ad266f092538f3db4fde48472f0b4fd1cf09b"
+    expected_archive_sha = "46c401523eb3762880c8638b2d47925d7ad04e2bd8db296504fe48eb437acb19"
     checksum_checker.verify_checksum(archive_path, expected_archive_sha)
     print("  [OK] Pristine archive SHA-256 match confirmed.")
 

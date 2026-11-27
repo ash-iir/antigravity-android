@@ -159,11 +159,10 @@ function registerRow(row) {
 }
 
 /**
- * patches/touch_model_menu/scan.js - debounced DOM scan for effort groups.
+ * patches/touch_model_menu/scan.js - debounced, mutation-filtered DOM scan for effort groups.
  */
 
-// Trailing debounce: DOM mutates constantly while a reply streams. A rAF scan
-// would run at screen refresh (60-120 Hz); coalesce to one pass.
+// Trailing debounce: DOM mutates constantly while a reply streams. Coalesce to one pass.
 var SCAN_DEBOUNCE_MS = 180;
 
 function scan() {
@@ -189,6 +188,31 @@ function scheduleScan() {
   }, SCAN_DEBOUNCE_MS);
 }
 
+function onMutations(mutations) {
+  if (state.scanTimer || !mutations) return;
+  for (var i = 0; i < mutations.length; i++) {
+    var m = mutations[i];
+    var added = m.addedNodes;
+    if (!added || added.length === 0) continue;
+    var target = m.target;
+    if (target && target.closest && target.closest('.prose, pre, code')) {
+      continue;
+    }
+    for (var j = 0; j < added.length; j++) {
+      var node = added[j];
+      if (!node || node.nodeType !== 1) continue;
+      if (node.matches && (node.matches(CONFIG.panel) || node.matches(CONFIG.effortGroup) || node.matches('[role="menu"]'))) {
+        scheduleScan();
+        return;
+      }
+      if (node.querySelector && node.querySelector(CONFIG.effortGroup)) {
+        scheduleScan();
+        return;
+      }
+    }
+  }
+}
+
 /**
  * patches/touch_model_menu/install.js - arm the observer on touch devices.
  */
@@ -206,7 +230,7 @@ function install() {
 
   var root = document.querySelector(CONFIG.root) || document.body || document.documentElement;
   if (window.MutationObserver && root) {
-    state.observer = new MutationObserver(scheduleScan);
+    state.observer = new MutationObserver(onMutations);
     state.observer.observe(root, { childList: true, subtree: true });
   }
   console.log('[agTouchModelMenu] active (rows=' + state.rows + ').');
