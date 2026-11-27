@@ -1,3 +1,21 @@
+# Antigravity for Android v2.36.1
+
+## Release Packages
+
+| Package | Application ID | Runtime Port | Description |
+| :--- | :--- | :--- | :--- |
+| **`antigravity.apk`** | `com.agy` | 45157 | Standard production release with original Google account checks. |
+| **`antigravity-region-bypass.apk`** | `com.agy` | 45157 | Region-bypass edition with account eligibility check bypass. |
+| **`SHA256SUMS.txt`** | — | — | Cryptographic SHA-256 checksums for verification. |
+
+## Changes & Fixes (v2.36.1)
+
+### 1. Upstream Antigravity `v2.36.0` Core & Web UI Upgrade (Fork Features Preserved)
+* Merged upstream `v2.36.0` (`efffcd9`): updated core `language_server` (`2.36.0-5596661662220288`), web UI assets (`main.js`, `compiled_tailwind.css`, `prism/components/prism-latex.min.js`), `crash_suppressor` CPU + 24-byte `setup_dl_debug_hook` ATOMIC signatures, `resolv_redirect` `2.36.0` `net.defaultNS` offsets, and `web/patch_main.py` (`lo()` `closeSettings` hook + generalized voice `AbortError` / `audioWorklet` Blob fallback matching).
+* Preserved 100% of fork features: Swarm dynamic `node` bridge / `nodejs-lts` auto-seed / `pkg` fallback overwrite / post-startup `builtin/plugins` sync / Hive GPU ghosting fix / Swarm UI quick-open chip, background-resume stream reset, Gmail/Plugin OAuth `REDIRECT` patch, step-by-step Back navigation + 1-step header `←` back, `GitHub (Local)` + GitHub Device Flow browser login, Plugins mobile UI CSS, background agent/Swarm notifications with active-work gate & 15s cooldown, and automated upstream sync CI.
+
+---
+
 # Antigravity for Android v2.36.0 (Upstream)
 
 ## Changes & Fixes (Upstream v2.36.0)
