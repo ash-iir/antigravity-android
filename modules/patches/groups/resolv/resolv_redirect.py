@@ -17,6 +17,8 @@ DNS_FALLBACK_REPL = b"8.8.8.8:53\x00\x00"
 
 # Known (str_off, array_len_off, slice_len_off) tuples for fast O(1) lookup across core versions.
 KNOWN_DNS_FALLBACK_OFFSETS = [
+    # v2.36.0
+    (0x4dcbeab, 0xa9de848, 0xa9dde58),
     # v2.35.2
     (0x4b2b703, 0xa45c3a8, 0xa45ba28),
     # v2.34.0

@@ -13,9 +13,9 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: 'Release Tag (e.g. v2.35.3)'
+        description: 'Release Tag (e.g. v2.36.0)'
         required: false
-        default: 'v2.35.3'
+        default: 'v2.36.0'
       draft:
         description: 'Create Draft Release'
         type: boolean
@@ -151,12 +151,12 @@ jobs:
 
             ---
 
-            ### What's New in v2.35.3
+            ### What's New in v2.36.0
 
-            * **Startup Crash Fix:** Fixed an `IllegalStateException` crash on launch in `MainActivity.onCreate` caused by attaching `SplashController`'s container to `rootLayout` twice after the `NativeSplashDotsView` refactor.
-            * **Upstream Antigravity 2.35.2:** Updated `language_server` (`2.35.2`) and web UI bundle (including Shiki worker, Prism components, and voices), with updated ELF patches (`pidfd`, `crash_suppressor`, dynamic `resolv_redirect`).
-            * **WebView Crash Recovery & Native Splash:** Added `onRenderProcessGone` automatic WebView recovery, `RENDERER_PRIORITY_BOUND`, and switched `SplashController` to `NativeSplashDotsView` (~40 MB RAM saved on launch).
-            * **Mid-Range & Long-Session Tuning:** Added RAM-scaled `GOMEMLIMIT`/`GOGC`, 5.5 GB sidecar RAM threshold, granular ARMv8.0 crypto flags, buffered in-session `core.log` rotation, debounced DNS sync, mobile `backdrop-filter` blur removal, filtered DOM mutation observer, adaptive `agy-daemon` sleep + log rotation, `ArrayDeque` log buffers, and `D8 --release` dexing.
+            * **Upstream Antigravity 2.36.0:** Updated `language_server` (`2.36.0-5596661662220288`) and web UI bundle (`main.js`, `compiled_tailwind.css`, `prism-latex`), with updated `crash_suppressor`, `resolv_redirect`, and `web/patch_main.py` patches.
+            * **Startup Crash Fix (v2.35.3):** Includes the `MainActivity.onCreate` duplicate splash container attach fix.
+            * **WebView Crash Recovery & Native Splash:** Includes `onRenderProcessGone` automatic WebView recovery, `RENDERER_PRIORITY_BOUND`, and `NativeSplashDotsView` (~40 MB RAM saved on launch).
+            * **Mid-Range & Long-Session Tuning:** RAM-scaled `GOMEMLIMIT`/`GOGC`, 5.5 GB sidecar RAM threshold, granular ARMv8.0 crypto flags, buffered `core.log` rotation, debounced DNS sync, mobile `backdrop-filter` blur removal, adaptive `agy-daemon` sleep + log rotation, and `D8 --release` dexing.
             * **Account Vault & Instant Switcher:** Persistent `0600` credential vault in **Settings → Accounts** and **Settings → Account → Saved Accounts**.
 
             ### Foundation Highlights
@@ -168,4 +168,4 @@ jobs:
             ---
 
             > [!NOTE]
-            > **Seamless Upgrades:** Built with the consistent embedded signing keystore (`APP_VERSION_CODE=23503`). You can install this update directly over previous v2.x releases without uninstalling or losing local projects.
+            > **Seamless Upgrades:** Built with the consistent embedded signing keystore (`APP_VERSION_CODE=23600`). You can install this update directly over previous v2.x releases without uninstalling or losing local projects.
