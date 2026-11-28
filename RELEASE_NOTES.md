@@ -1,3 +1,26 @@
+# Antigravity for Android v2.36.2
+
+## Release Packages
+
+| Package | Application ID | Runtime Port | Description |
+| :--- | :--- | :--- | :--- |
+| **`antigravity.apk`** | `com.agy` | 45157 | Standard production release with original Google account checks. |
+| **`antigravity-region-bypass.apk`** | `com.agy` | 45157 | Region-bypass edition with account eligibility check bypass. |
+| **`SHA256SUMS.txt`** | — | — | Cryptographic SHA-256 checksums for verification. |
+
+## Changes & Fixes (v2.36.2)
+
+### 1. Google OAuth Account Chooser
+* Enforce Google OAuth `prompt=select_account` (stripping `login_hint`/`authuser`) via `GoogleOAuthUrlRewriter` so Gmail & Google Workspace plugin logins show all Google accounts logged into Chrome instead of auto-selecting one.
+
+### 2. Optional Project Folder Deletion
+* Add an optional, unchecked-by-default **"Also delete project folder from storage"** checkbox in the Delete Project dialog backed by path-safe `ProjectFolderDeleter.java` (refuses system/root/symlink/remote targets).
+
+### 3. Live Swarm Graph & Hive Anti-Blinking Fix
+* Fix Live-mode blinking & jumping in Swarm Graph/Hive (`app.js` structural SVG diffing without volatile `<title>` rebuilds, deterministic bee ordering in `hive.js`, width-guarded `ResizeObserver`, and removing 60fps `.hv-bee` layout transitions & Live dot `ping` animations in `hive.css`).
+
+---
+
 # Antigravity for Android v2.36.1
 
 ## Release Packages

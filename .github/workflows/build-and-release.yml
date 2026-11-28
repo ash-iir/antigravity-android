@@ -13,9 +13,9 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: 'Release Tag (e.g. v2.36.1)'
+        description: 'Release Tag (e.g. v2.36.2)'
         required: false
-        default: 'v2.36.1'
+        default: 'v2.36.2'
       draft:
         description: 'Create Draft Release'
         type: boolean
@@ -151,10 +151,11 @@ jobs:
 
             ---
 
-            ### What's New in v2.36.1
+            ### What's New in v2.36.2
 
-            * **Upstream Antigravity v2.36.0 Upgrade:** Integrated upstream `v2.36.0` (`efffcd9`): updated `language_server` (`2.36.0-5596661662220288`), web UI bundle (`main.js`, `compiled_tailwind.css`, `prism-latex`), `crash_suppressor`, `resolv_redirect`, and `web/patch_main.py` patches.
-            * **All Fork Features Preserved:** Keeps Swarm dynamic `node` bridge / `nodejs-lts` auto-seed / `pkg` fallback overwrite / post-startup `builtin/plugins` sync / Hive GPU ghosting fix / Swarm UI quick-open chip, background-resume stream reset, Gmail/Plugin OAuth `REDIRECT` patch, step-by-step Back nav + 1-step header `←` back, `GitHub (Local)` + Device Flow browser login, Plugins mobile UI CSS, background agent/Swarm notifications with active-work gate & 15s cooldown, and automated upstream sync CI.
+            * **Google OAuth Account Chooser:** Enforces `prompt=select_account` (stripping `login_hint`/`authuser`) via `GoogleOAuthUrlRewriter` so Gmail & Google Workspace plugin logins display all Google accounts logged into Chrome instead of auto-selecting one.
+            * **Optional Project Folder Deletion:** Adds an unchecked-by-default **"Also delete project folder from storage"** checkbox in the Delete Project dialog, backed by path-safe `ProjectFolderDeleter.java` (refuses system, root, symlink, and remote targets).
+            * **Live Swarm Graph & Hive Stability:** Eliminates Live-mode blinking and jumping via structural SVG diffing without volatile `<title>` rebuilds (`app.js`), deterministic bee ordering (`hive.js`), width-guarded `ResizeObserver`, and removing 60fps `.hv-bee` layout transitions & Live dot `ping` animations (`hive.css`).
 
             ### Fork Highlights (Preserved)
 
@@ -171,4 +172,4 @@ jobs:
             ---
 
             > [!NOTE]
-            > **Seamless Upgrades:** Built with the consistent embedded signing keystore (`APP_VERSION_CODE=23601`). You can install this update directly over previous v2.x releases without uninstalling or losing local projects.
+            > **Seamless Upgrades:** Built with the consistent embedded signing keystore (`APP_VERSION_CODE=23602`). You can install this update directly over previous v2.x releases without uninstalling or losing local projects.
