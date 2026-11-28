@@ -377,7 +377,7 @@
 @media (prefers-reduced-motion: reduce) { .o2-tvth { transition: none; } }
 
 /* Hive map (Graph tab): threads as honeycomb cells, bees where they work. */
-.pane .hv-stage { position: relative; overflow: hidden; contain: layout style paint; }
+.pane .hv-stage { position: relative; overflow: hidden; contain: layout style; }
 /* Zoom: the map scrolls inside its box; drag to pan. */
 .pane .hv-bar { display: flex; align-items: flex-start; gap: 12px; }
 .pane .hv-bar .hv-sum { flex: 1; min-width: 0; }
@@ -440,7 +440,7 @@
 .pane .hv-ln.beam { stroke: color-mix(in srgb, var(--o2-info) 70%, var(--o2-fg)); stroke-width: 1.5; stroke-linecap: round; opacity: .55; }
 .pane .hv-bd { fill: color-mix(in srgb, var(--o2-info) 70%, var(--o2-fg)); opacity: .9; }
 .pane .hv-ah { fill: var(--o2-warn); opacity: .55; }
-.pane .hv-bee { all: unset; box-sizing: border-box; position: absolute; left: 0; top: 0; pointer-events: auto; cursor: pointer; transition: left .55s cubic-bezier(.3,.7,.2,1), top .55s cubic-bezier(.3,.7,.2,1), opacity .3s, filter .3s; }
+.pane .hv-bee { all: unset; box-sizing: border-box; position: absolute; left: 0; top: 0; pointer-events: auto; cursor: pointer; transition: none; }
 .pane .hv-bee:focus-visible { outline: 2px solid var(--sw-ring, var(--o2-info)); outline-offset: 3px; border-radius: 8px; }
 .pane .hv-bee .beebox { --cell: 2px; width: 44px; height: 36px; }
 .pane .hv-bee.sz-q .beebox { --cell: 3px; width: 66px; height: 54px; }
@@ -455,7 +455,7 @@
 .pane .hv-bee.wait .hv-dot, .pane .hv-bee.needs .hv-dot { display: block; background: var(--o2-warn); }
 .pane .hv-bee.issue .hv-dot { display: block; background: var(--o2-bad); }
 .pane .hv-bee.done .hv-dot { display: block; background: var(--o2-ok); }
-.pane .hv-nm { position: absolute; top: 100%; left: 50%; transform: translateX(-50%); margin-top: 1px; max-width: 56px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; color: var(--o2-muted); display: none; }
+.pane .hv-nm { position: absolute; top: 100%; left: 50%; margin-left: -28px; width: 56px; text-align: center; margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; color: var(--o2-muted); display: none; }
 .pane .hv-bees.names .hv-bee:not(.q) .hv-nm { display: block; }
 .pane .hv-key { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 12px; font-size: 12px; color: var(--o2-muted); }
 .pane .hv-key span { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
@@ -469,6 +469,8 @@
 .pane .hv-key i.hv-kw::after { content: ''; position: absolute; right: -6px; top: -5px; border: 4px solid transparent; border-left: 7px solid var(--o2-warn); border-right: 0; }
 /* With the hive drawn, the mention graph, its legend and its two switches step aside. */
 #tab-graph.hive-on #graph, #tab-graph.hive-on .graph-legend, #tab-graph.hive-on .player .switch { display: none; }
+/* Disable 60fps GPU ping ring animations on Live dots to prevent Android WebView compositor flicker over the Hive/Graph SVG stage. */
+#live .live-dot::after, #tab-graph .live-dot::after { animation: none !important; display: none !important; }
 @media (max-width: 600px) {
   .pane .o2-lead { padding: 8px 10px; gap: 10px; }
   .pane .o2-crew { gap: 6px; }

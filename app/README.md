@@ -90,7 +90,7 @@ The core binary (`language_server`) is compiled for Linux/Glibc and runs on Andr
   - Polls local HTTPS readiness up to 60 seconds (`READY_TIMEOUT_MS = 60000`) for slow ARMv8.0-A cold starts.
   - Verifies exact SHA-256 leaf pinning against `@raw/agy_core_cert` via `matchesCert()`, invoked by `AgyWebViewClient.onReceivedSslError` alongside `TrustedCoreOrigin.matches()`.
 - **`OpenUrlWatcher`**:
-  - Captures Google OAuth redirects (`AGY_OPEN_URL=`, `ANTIGRAVITY_OPEN_URL:`, and `accounts.google.com` URLs) from core stdout and opens them in the external browser via `CustomTabLauncher` (also handles the permission-protected `com.agy.ACTION_OPEN_URL` broadcast).
+  - Captures Google OAuth redirects (`AGY_OPEN_URL=`, `ANTIGRAVITY_OPEN_URL:`, and `accounts.google.com` URLs) from core stdout and opens them in the external browser via `CustomTabLauncher` (also handles the permission-protected `com.agy.ACTION_OPEN_URL` broadcast). `CustomTabLauncher` (and `UriDispatcher`) runs `GoogleOAuthUrlRewriter.ensureAccountChooser()` on `https://accounts.google.com/o/oauth2/.../auth` URLs so `prompt` always includes `select_account` (preserving `consent` if present) and `login_hint`/`authuser` are stripped without altering other encoded query parameters.
 
 ### 2.2. WebView, UI & Startup Flow (`com.agy.ui`)
 

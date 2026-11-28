@@ -74,3 +74,6 @@ src/patches/account_switcher/install.js
 
 bundle iife patches/swarm_pane_chip.js
 src/patches/swarm_pane_chip/install.js
+
+bundle iife patches/project_delete_folder.js
+src/patches/project_delete_folder/install.js

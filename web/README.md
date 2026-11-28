@@ -85,6 +85,7 @@ web/
 │       ├── github_device_auth.js
 │       ├── account_switcher.js
 │       ├── swarm_pane_chip.js
+│       ├── project_delete_folder.js
 │       └── startup_ready.js
 ├── src/                          # Modular source fragments
 │   ├── boot/                     # Early boot fragments
@@ -121,6 +122,7 @@ web/
 | **`patches/github_device_auth.js`** | IIFE | ~31 KB | Injects 1-tap direct GitHub browser login (OAuth 2.0 Device Flow via `AndroidBridge`) into the `GitHub (Local)` Accounts card for both initial sign-in and multi-account "Add account", preserving manual PAT paste. |
 | **`patches/account_switcher.js`** | IIFE | ~16.7 KB | Renders Settings -> Accounts and Account -> Saved Accounts using native Settings primitives (`LU`/`PU`/`NU`/`OU`/`BI`/`Dgb`), auto-syncs logged-in accounts, and performs instant hot-swap switching. |
 | **`patches/swarm_pane_chip.js`** | IIFE | ~22 KB | Injects a compact, theme-matched `Swarm` quick-open chip (`shrink-0`) into the main chat composer toolbar (`[data-agent-composer-root]`) that directly opens/toggles the upstream Swarm UI sidecar pane (via Redux `sidePanelV2/setContent` + `sidePanel/setSidePanelOpen` and `extensibility` registry, with DOM `Open the Swarm UI` / `sidecar://swarm` fallback and 250 ms debounce) without modifying composer text. |
+| **`patches/project_delete_folder.js`** | IIFE | ~22 KB | Injects an optional, unchecked-by-default `"Also delete project folder from storage"` checkbox (with compact path preview and subtle danger styling when checked) into local Delete Project / Remove Workspace confirmation dialogs, invoking token-gated `Android.deleteProjectFolder(token, path)` on confirm while skipping remote/cloud and protected-root projects. |
 | **`patches/startup_ready.js`** | IIFE | ~4.7 KB | Signals first meaningful DOM render (`onUiReady`) and captures fatal JS errors. |
 | **`main.js`** | Raw + Patch | ~9.5 MB | Production React bundle patched by `patch_main.py`. |
 
@@ -165,6 +167,7 @@ web/
 | `syncCurrentAccount` | `(token, profileJson) => string` | Syncs the active token snapshot and UI profile metadata into `AccountVaultStore`. |
 | `activateSavedAccount` | `(token, accountId, outgoingProfileJson) => string` | Saves outgoing account state and atomically activates the target account's token on disk. |
 | `removeSavedAccount` | `(token, accountId) => string` | Removes a saved account from the persistent vault. |
+| `deleteProjectFolder` | `(token, rawPath) => string` | Validates a local project path against strict allowlist/denylist rules, queues no-follow recursive deletion on a background executor, and returns JSON `{ok, path, error}`. |
 | `restartCoreForAccountSwitch` | `(token) => void` | Clean core service restart fallback if hot-swap verification detects stale server state. |
 
 ---

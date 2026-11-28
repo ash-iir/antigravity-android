@@ -2010,6 +2010,228 @@ assert.strictEqual(pillClicks, 1, 'DOM fallback must click existing Open the Swa
 // 6. Composer chat input text is completely untouched.
 assert.strictEqual(chatInput.textContent, 'Keep my draft message intact', 'chat input must never be mutated');
 EOF
+
+    # Behavioral test: patches/project_delete_folder.js injects an optional
+    # unchecked-by-default checkbox on local project delete dialogs, skips
+    # remote/protected projects, and calls Android.deleteProjectFolder(token, path)
+    # only when checked on confirm.
+    node - "$TMP/web/generated/patches/project_delete_folder.js" <<'EOF'
+const fs = require('fs');
+const vm = require('vm');
+const assert = require('assert');
+
+const code = fs.readFileSync(process.argv[2], 'utf8');
+
+function makeEl(tag, attrs = {}) {
+  const el = {
+    tagName: tag.toUpperCase(),
+    id: attrs.id || '',
+    className: attrs.className || '',
+    type: attrs.type || '',
+    checked: Boolean(attrs.checked),
+    attrs: Object.assign({}, attrs),
+    children: [],
+    parentElement: null,
+    ownerDocument: null,
+    _text: attrs.textContent || '',
+    listeners: new Map(),
+    setAttribute(k, v) {
+      const sv = String(v);
+      this.attrs[k] = sv;
+      if (k === 'id') this.id = sv;
+      if (k === 'class') this.className = sv;
+    },
+    getAttribute(k) {
+      return Object.prototype.hasOwnProperty.call(this.attrs, k) ? this.attrs[k] : null;
+    },
+    appendChild(child) {
+      child.parentElement = this;
+      child.ownerDocument = this.ownerDocument;
+      this.children.push(child);
+      return child;
+    },
+    insertBefore(child, ref) {
+      child.parentElement = this;
+      child.ownerDocument = this.ownerDocument;
+      const idx = this.children.indexOf(ref);
+      if (idx >= 0) this.children.splice(idx, 0, child);
+      else this.children.push(child);
+      return child;
+    },
+    addEventListener(type, fn, capture) {
+      const key = `${type}:${capture ? 'cap' : 'bub'}`;
+      if (!this.listeners.has(key)) this.listeners.set(key, []);
+      this.listeners.get(key).push(fn);
+    },
+    dispatchEvent(ev) {
+      const e = Object.assign({ target: this }, ev);
+      for (const fn of (this.listeners.get(`${e.type}:cap`) || [])) fn(e);
+      for (const fn of (this.listeners.get(`${e.type}:bub`) || [])) fn(e);
+      return true;
+    },
+    click() {
+      this.dispatchEvent({ type: 'click' });
+    },
+    matches(sel) {
+      return sel.split(',').some((raw) => {
+        const s = raw.trim();
+        if (s === 'button' || s === 'p' || s === 'strong' || s === 'h1' || s === 'h2' || s === 'h3' || s === 'input' || s === 'label') {
+          return this.tagName === s.toUpperCase();
+        }
+        if (s === '.agy-dialog') return this.className.split(/\s+/).includes('agy-dialog');
+        const attrEq = s.match(/^\[([^=\]]+)="([^"]+)"\]$/);
+        if (attrEq) return this.getAttribute(attrEq[1]) === attrEq[2];
+        const attrOnly = s.match(/^\[([^\]]+)\]$/);
+        if (attrOnly) return this.getAttribute(attrOnly[1]) !== null;
+        return false;
+      });
+    },
+    querySelectorAll(sel) {
+      const out = [];
+      const walk = (n) => {
+        for (const c of n.children) {
+          if (c.matches(sel)) out.push(c);
+          walk(c);
+        }
+      };
+      walk(this);
+      return out;
+    },
+    querySelector(sel) {
+      return this.querySelectorAll(sel)[0] || null;
+    }
+  };
+  Object.defineProperty(el, 'textContent', {
+    get() {
+      if (this.children.length === 0) return this._text;
+      return this._text + this.children.map((c) => c.textContent).join('');
+    },
+    set(v) {
+      this._text = String(v);
+      this.children = [];
+    }
+  });
+  return el;
+}
+
+const head = makeEl('head');
+const body = makeEl('body');
+const root = makeEl('div', { id: 'root' });
+body.appendChild(root);
+
+const mockDocument = {
+  readyState: 'complete',
+  head,
+  body,
+  documentElement: body,
+  createElement(tag) {
+    const el = makeEl(tag);
+    el.ownerDocument = mockDocument;
+    return el;
+  },
+  getElementById: (id) => (id === 'root' ? root : head.children.find((c) => c.id === id) || null),
+  querySelector: (sel) => body.querySelector(sel),
+  querySelectorAll: (sel) => body.querySelectorAll(sel)
+};
+head.ownerDocument = mockDocument;
+body.ownerDocument = mockDocument;
+root.ownerDocument = mockDocument;
+
+const deleteCalls = [];
+const sandbox = {
+  console,
+  document: mockDocument,
+  __AG_NATIVE_BRIDGE_TOKEN__: 'tok-secret-123',
+  Android: {
+    deleteProjectFolder(token, path) {
+      deleteCalls.push({ token, path });
+      return JSON.stringify({ ok: true, path, error: '' });
+    }
+  },
+  setTimeout: (fn) => { fn(); return 1; }
+};
+sandbox.window = sandbox;
+sandbox.globalThis = sandbox;
+
+const projectsState = [
+  { id: 'proj-local', name: 'MyApp', folderUris: ['file:///storage/emulated/0/Documents/MyApp'] },
+  { id: 'proj-remote', name: 'RemoteRepo', backendType: 2, folderUris: [] },
+  { id: 'proj-github', name: 'GitHubRepo', folderUris: ['https://github.com/org/repo'] },
+  { id: 'proj-protected', name: 'DocsRoot', folderUris: ['file:///storage/emulated/0/Documents'] }
+];
+const store = {
+  getState: () => ({
+    sidebarProjects: { enabled: true, projects: projectsState }
+  })
+};
+const fiberStore = { memoizedProps: { value: { store } }, return: null };
+
+function makeDeleteDialog(projectId, projectName, headingText = 'Delete Project') {
+  const dialog = makeEl('div', { role: 'dialog', className: 'agy-dialog' });
+  dialog.ownerDocument = mockDocument;
+  const header = makeEl('h2', { textContent: headingText });
+  const content = makeEl('div');
+  const p = makeEl('p', { textContent: 'Are you sure you want to delete the project ' });
+  const strong = makeEl('strong', { textContent: projectName });
+  p.appendChild(strong);
+  const footer = makeEl('div', { className: 'flex justify-end gap-3' });
+  const cancelBtn = makeEl('button', { textContent: 'Cancel' });
+  const deleteBtn = makeEl('button', { 'data-autofocus': 'true', textContent: 'Delete' });
+  footer.appendChild(cancelBtn);
+  footer.appendChild(deleteBtn);
+  content.appendChild(p);
+  content.appendChild(footer);
+  dialog.appendChild(header);
+  dialog.appendChild(content);
+
+  const fiberParent = { memoizedProps: { projectId, projectName }, return: fiberStore };
+  dialog.__reactFiber$test = { memoizedProps: {}, return: fiberParent };
+  body.appendChild(dialog);
+  return { dialog, cancelBtn, deleteBtn };
+}
+
+vm.runInNewContext(code, sandbox);
+
+// 1. Local project delete dialog gets checkbox (unchecked by default) + compact path.
+const d1 = makeDeleteDialog('proj-local', 'MyApp');
+assert.strictEqual(sandbox.__agProjectDeleteFolder.scan(), 1, 'checkbox must be injected for local project');
+assert.strictEqual(sandbox.__agProjectDeleteFolder.scan(), 0, 'scan must be idempotent');
+const cb1 = d1.dialog.querySelector('[data-agy-delete-folder-checkbox="true"]');
+const row1 = d1.dialog.querySelector('[data-agy-delete-folder-row="true"]');
+assert.ok(cb1, 'checkbox element must exist');
+assert.strictEqual(cb1.checked, false, 'checkbox must be unchecked by default');
+assert.strictEqual(row1.getAttribute('data-checked'), 'false');
+
+// 2. Confirm while unchecked -> NO native deleteProjectFolder call.
+d1.deleteBtn.click();
+assert.strictEqual(deleteCalls.length, 0, 'confirm with unchecked checkbox must not call native deleter');
+
+// 3. Remote / cloud / GitHub / protected-root projects -> NO checkbox injected.
+const dRemote = makeDeleteDialog('proj-remote', 'RemoteRepo');
+const dGithub = makeDeleteDialog('proj-github', 'GitHubRepo');
+const dProtected = makeDeleteDialog('proj-protected', 'DocsRoot');
+assert.strictEqual(sandbox.__agProjectDeleteFolder.scan(), 0, 'must not inject checkbox for remote or protected-root projects');
+assert.strictEqual(dRemote.dialog.querySelector('[data-agy-delete-folder-checkbox="true"]'), null);
+assert.strictEqual(dGithub.dialog.querySelector('[data-agy-delete-folder-checkbox="true"]'), null);
+assert.strictEqual(dProtected.dialog.querySelector('[data-agy-delete-folder-checkbox="true"]'), null);
+
+// 4. Confirm while checked -> calls Android.deleteProjectFolder(token, path) once.
+const d2 = makeDeleteDialog('proj-local', 'MyApp', 'Delete Workspace');
+assert.strictEqual(sandbox.__agProjectDeleteFolder.scan(), 1);
+const cb2 = d2.dialog.querySelector('[data-agy-delete-folder-checkbox="true"]');
+const row2 = d2.dialog.querySelector('[data-agy-delete-folder-row="true"]');
+cb2.checked = true;
+cb2.dispatchEvent({ type: 'change' });
+assert.strictEqual(row2.getAttribute('data-checked'), 'true', 'row must reflect checked danger state');
+d2.deleteBtn.click();
+assert.strictEqual(deleteCalls.length, 1, 'confirm with checked checkbox must call native deleter');
+assert.strictEqual(deleteCalls[0].token, 'tok-secret-123');
+assert.strictEqual(deleteCalls[0].path, '/storage/emulated/0/Documents/MyApp');
+
+// Second click on same dialog is deduplicated.
+d2.deleteBtn.click();
+assert.strictEqual(deleteCalls.length, 1, 'duplicate confirm click must not trigger second native delete');
+EOF
 fi
 
 echo "web build selftest: OK"

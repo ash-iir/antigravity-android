@@ -4,6 +4,7 @@ import android.content.Context;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebView;
 
+import com.agy.fs.ProjectFolderDeleter;
 import com.agy.oauth.GitHubDeviceAuth;
 import com.agy.runtime.RuntimeManager;
 import com.agy.shell.RootBridge;
@@ -38,6 +39,14 @@ public final class AndroidBridge {
         @Override
         public Thread newThread(Runnable r) {
             Thread t = new Thread(r, "AgyGitHubDeviceAuth");
+            t.setDaemon(true);
+            return t;
+        }
+    });
+    private final ExecutorService projectDeleteExecutor = Executors.newSingleThreadExecutor(new ThreadFactory() {
+        @Override
+        public Thread newThread(Runnable r) {
+            Thread t = new Thread(r, "AgyProjectFolderDelete");
             t.setDaemon(true);
             return t;
         }
@@ -367,6 +376,30 @@ public final class AndroidBridge {
             return "[]";
         }
         return com.agy.oauth.AccountVaultStore.removeAccount(appContext, accountId);
+    }
+
+    /**
+     * Safely deletes a local project directory on a background executor after strict
+     * token and path-safety validation. Returns JSON {@code {ok, path, error}}.
+     */
+    @JavascriptInterface
+    public String deleteProjectFolder(String token, String rawPath) {
+        if (!matchesNativeBridgeToken(token)) {
+            return ProjectFolderDeleter.buildJson(false, "", "Unauthorized bridge call");
+        }
+        final ProjectFolderDeleter.ValidationResult validation =
+                ProjectFolderDeleter.validateTarget(appContext, rawPath);
+        if (!validation.ok) {
+            return ProjectFolderDeleter.buildJson(false, validation.canonicalPath, validation.error);
+        }
+        projectDeleteExecutor.execute(new Runnable() {
+            @Override
+            public void run() {
+                ProjectFolderDeleter.deleteValidatedDirectory(
+                        validation.canonicalDir, validation.canonicalPath);
+            }
+        });
+        return ProjectFolderDeleter.buildJson(true, validation.canonicalPath, "");
     }
 
     /** Cleanly restarts the core service and reloads WebView if hot-swap verification requires it. */
