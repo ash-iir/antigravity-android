@@ -1,0 +1,226 @@
+name: Auto-Update Upstream Antigravity
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Force update run even if upstream build tag matches'
+        type: boolean
+        default: false
+      dry_run:
+        description: 'Check, patch, and test without pushing or releasing'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: auto-update-upstream
+  cancel-in-progress: false
+
+jobs:
+  auto-update:
+    name: Check, Patch, Test & Release Upstream Update
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          lfs: true
+
+      - name: Setup Python 3
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Check Upstream Antigravity Version
+        id: check
+        run: |
+          FORCE_FLAG=""
+          if [ "${{ github.event.inputs.force }}" = "true" ]; then
+            FORCE_FLAG="--force"
+          fi
+          python3 modules/runner/auto_update.py $FORCE_FLAG check --github-output "$GITHUB_OUTPUT"
+
+      - name: Setup Java JDK (Java 17)
+        if: steps.check.outputs.needs_update == 'true'
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Node.js
+        if: steps.check.outputs.needs_update == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Android Build Tools & System Utilities
+        if: steps.check.outputs.needs_update == 'true'
+        run: |
+          for i in 1 2 3; do
+            sudo apt-get update && sudo apt-get install -y --fix-missing aapt zipalign apksigner file zip unzip gzip gcc-aarch64-linux-gnu && break || sleep 5
+          done
+
+      - name: Prepare Signing Keystore & Android Build Jars
+        if: steps.check.outputs.needs_update == 'true'
+        run: |
+          mkdir -p tools
+          if [ ! -f "tools/debug.keystore" ]; then
+            keytool -genkey -v -keystore tools/debug.keystore \
+              -storepass android -alias androiddebugkey -keypass android \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=Android Debug,O=Android,C=US"
+          fi
+          if [ ! -f "tools/android.jar" ]; then
+            curl -fsSL -o tools/android.jar "https://github.com/Sable/android-platforms/raw/master/android-28/android.jar" || \
+            curl -fsSL -o tools/android.jar "https://raw.githubusercontent.com/iBotPeaches/platform_frameworks_base/master/android-28.jar"
+          fi
+          if [ ! -f "tools/r8.jar" ]; then
+            curl -fsSL -o tools/r8.jar "https://dl.google.com/dl/android/maven2/com/android/tools/r8/8.2.42/r8-8.2.42.jar"
+          fi
+
+      - name: Download, Extract, Patch & Update Metadata
+        id: apply
+        if: steps.check.outputs.needs_update == 'true'
+        run: |
+          set +e
+          FORCE_FLAG=""
+          if [ "${{ github.event.inputs.force }}" = "true" ]; then
+            FORCE_FLAG="--force"
+          fi
+          python3 modules/runner/auto_update.py $FORCE_FLAG apply --summary-out /tmp/auto_update_summary.json 2>&1 | tee /tmp/auto_update.log
+          rc=${PIPESTATUS[0]}
+          echo "apply_rc=$rc" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Run Full Modular Test Suites
+        id: tests
+        if: steps.check.outputs.needs_update == 'true' && steps.apply.outputs.apply_rc == '0'
+        run: |
+          set +e
+          {
+            bash modules/core/tests/run_all.sh &&
+            bash modules/patches/tests/run_all.sh &&
+            bash modules/io/tests/run_all.sh &&
+            bash modules/env/tests/run_all.sh &&
+            bash modules/builder/tests/run_all.sh &&
+            python3 modules/core/validate/verify_pipeline.py &&
+            python3 modules/runner/test_auto_update.py
+          } 2>&1 | tee /tmp/auto_update_tests.log
+          rc=${PIPESTATUS[0]}
+          if [ "$rc" -eq 0 ]; then
+            echo "tests_ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "tests_ok=false" >> "$GITHUB_OUTPUT"
+          fi
+          exit 0
+
+      - name: Build Both Release APKs & Checksums
+        id: build
+        if: steps.check.outputs.needs_update == 'true' && steps.apply.outputs.apply_rc == '0' && steps.tests.outputs.tests_ok == 'true' && github.event.inputs.dry_run != 'true'
+        run: |
+          bash build.sh
+          bash build.sh --region-bypass
+          cd dist
+          sha256sum antigravity.apk antigravity-region-bypass.apk > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Commit & Push Update to Main
+        if: steps.check.outputs.needs_update == 'true' && steps.apply.outputs.apply_rc == '0' && steps.tests.outputs.tests_ok == 'true' && github.event.inputs.dry_run != 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          NEW_VER="${{ steps.check.outputs.new_app_version }}"
+          BUILD_TAG="${{ steps.check.outputs.upstream_build_tag }}"
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m "feat(auto-update): upgrade core/web to v${NEW_VER} (${BUILD_TAG}) [skip ci]"
+            git push origin HEAD:main
+          fi
+          git tag -f "v${NEW_VER}"
+          git push -f origin "refs/tags/v${NEW_VER}"
+
+      - name: Publish GitHub Release
+        if: steps.check.outputs.needs_update == 'true' && steps.apply.outputs.apply_rc == '0' && steps.tests.outputs.tests_ok == 'true' && github.event.inputs.dry_run != 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.check.outputs.new_app_version }}
+          name: Antigravity for Android v${{ steps.check.outputs.new_app_version }}
+          draft: false
+          prerelease: false
+          make_latest: true
+          files: |
+            dist/antigravity.apk
+            dist/antigravity-region-bypass.apk
+            dist/SHA256SUMS.txt
+          body: |
+            <div align="center">
+              <h3>Antigravity for Android v${{ steps.check.outputs.new_app_version }}</h3>
+              <p>Automated Upstream Release &bull; Core <code>${{ steps.check.outputs.upstream_build_tag }}</code></p>
+            </div>
+
+            ---
+
+            ### Packages & Artifacts
+
+            | Package | Description |
+            | :--- | :--- |
+            | **`antigravity.apk`** | Standard production release with native bionic engine (com.agy, port 45157) |
+            | **`antigravity-region-bypass.apk`** | Region bypass edition with account eligibility check bypass (com.agy, port 45157) |
+            | **`SHA256SUMS.txt`** | Cryptographic checksums for package integrity verification |
+
+            ---
+
+            > [!NOTE]
+            > **Seamless Upgrades:** Built with the consistent embedded signing keystore (`APP_VERSION_CODE=${{ steps.check.outputs.new_app_code }}`). You can install this update directly over previous v2.x releases without uninstalling or losing local projects.
+
+      - name: Open Review PR or Issue on Patch/Test Failure
+        if: steps.check.outputs.needs_update == 'true' && (steps.apply.outputs.apply_rc != '0' || steps.tests.outputs.tests_ok != 'true') && github.event.inputs.dry_run != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          NEW_VER="${{ steps.check.outputs.new_app_version }}"
+          BUILD_TAG="${{ steps.check.outputs.upstream_build_tag }}"
+          BRANCH="auto-update/v${NEW_VER}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$BRANCH"
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m "chore(auto-update): stage v${NEW_VER} (${BUILD_TAG}) for patch review"
+            git push -f origin "HEAD:refs/heads/${BRANCH}"
+          fi
+
+          BODY_FILE="/tmp/pr_body.md"
+          {
+            echo "## Automated Upstream Update Needs Review: \`v${NEW_VER}\`"
+            echo ""
+            echo "- **Upstream Build:** \`${BUILD_TAG}\`"
+            echo "- **Apply Exit Code:** \`${{ steps.apply.outputs.apply_rc }}\`"
+            echo "- **Tests Passed:** \`${{ steps.tests.outputs.tests_ok || 'not_run' }}\`"
+            echo "- **Workflow Run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo ""
+            echo "### Diagnostic Log (tail)"
+            echo '```text'
+            tail -n 80 /tmp/auto_update.log /tmp/auto_update_tests.log 2>/dev/null || true
+            echo '```'
+          } > "$BODY_FILE"
+
+          if ! gh pr create --base main --head "$BRANCH" \
+            --title "chore(auto-update): v${NEW_VER} (${BUILD_TAG}) needs patch review" \
+            --body-file "$BODY_FILE"; then
+            echo "[auto-update] PR creation unavailable; opening Issue instead..."
+            gh issue create \
+              --title "Auto-update v${NEW_VER} (${BUILD_TAG}) needs manual patch review" \
+              --body-file "$BODY_FILE" || true
+          fi
+          exit 1

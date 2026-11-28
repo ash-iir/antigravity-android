@@ -10,6 +10,8 @@
 
 ```text
 modules/runner/
+├── auto_update.py       # Upstream release checker, extractor, patch verifier & metadata updater
+├── test_auto_update.py  # Offline unit tests for auto_update.py
 ├── prepare_runtime.py   # Extracts/patches core and verifies runtime integrity
 ├── start_core.sh        # Configures glibc/Bionic env and launches core + I/O bus
 ├── probe_server.py      # Fail-fast readiness & liveness probe
@@ -20,6 +22,8 @@ modules/runner/
 
 | File | Language | Purpose | Key Dependencies |
 | :--- | :--- | :--- | :--- |
+| `auto_update.py` | Python 3 | Polls `antigravity.google/download`, extracts core/web, verifies patches, updates specs | `modules/patches`, `web/build.sh` |
+| `test_auto_update.py` | Python 3 | Offline unit tests for upstream URL parsing, version bumps, and web ZIP sync | `unittest`, `zipfile` |
 | `prepare_runtime.py` | Python 3 | Extracts pristine core, applies binary patches, builds `standalone_runtime/`, verifies `manifest.json` | `modules/core`, `modules/patches` |
 | `start_core.sh` | Bash | Configures `libloader.so`, `liblse_compat.so`, FIFO log stream, and `stream_splitter.py` | `modules/io`, `libloader.so`, `liblse_compat.so` |
 | `probe_server.py` | Python 3 | Polls `127.0.0.1:PORT` while watching `/proc`/PID liveness | `urllib.request`, `socket` |
