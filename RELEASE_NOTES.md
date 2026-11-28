@@ -1,3 +1,26 @@
+# Antigravity for Android v2.36.0.2 (Antigravity Core 2.36.0)
+
+## Release Packages
+
+| Package | Application ID | Runtime Port | Description |
+| :--- | :--- | :--- | :--- |
+| **`antigravity.apk`** | `com.agy` | 45157 | Standard production release with original Google account checks. |
+| **`antigravity-region-bypass.apk`** | `com.agy` | 45157 | Region-bypass edition with account eligibility check bypass. |
+| **`SHA256SUMS.txt`** | — | — | Cryptographic SHA-256 checksums for verification. |
+
+## Changes & Fixes (v2.36.0.2)
+
+### 1. External Version Format & Release Notes
+* **4-Part `CORE.APP_REV` Versioning (`2.36.0.2` / `versionCode 2360002`):** Antigravity core version (`2.36.0`) is now visible directly outside the app (Android App Info, APK installer, GitHub Release tag/title), with the 4th segment tracking Android app fixes and features.
+* **In-App Update Preview Fix (`UpdateChecker`):** Fixed changelog preview parsing to start from `### What's New` instead of truncating after `### Packages & Artifacts`.
+* **Diagnostics & Update Prompt:** `LogExporter` and `UpdateChecker` include both the app revision and `Core 2.36.0`.
+
+### 2. Shizuku & Agent Environment Fixes (from v3.0.0–v3.0.1)
+* **Shizuku Manager Visibility:** Declared both `moe.shizuku.manager.permission.API_V23` and `<meta-data android:name="moe.shizuku.client.V3_SUPPORT" android:value="true" />` in `AndroidManifest.xml`.
+* **Auto-Refresh `AGENTS.md` on Upgrade:** `OnboardingSeeder` refreshes `~/.gemini/config/AGENTS.md` whenever `APP_VERSION_CODE` increments, with corrected instructions for `pkg`, `agy-daemon`, `agy-notify`, `agy-root`/`agy-sys`, `rish`, and reserved ports.
+
+---
+
 # Antigravity for Android v2.36.0
 
 ## Release Packages

@@ -71,22 +71,30 @@ def semver_tuple(ver: str) -> Tuple[int, int, int]:
     return (parts[0], parts[1], parts[2])
 
 
-def bump_app_semver(
-    current_app_ver: str, current_app_code: int, part: str = "patch"
+def parse_app_rev(ver: str) -> Tuple[int, int, int, int]:
+    """Parse 3-or-4-part version string into (core_major, core_minor, core_patch, app_rev)."""
+    parts = [int(p) for p in ver.strip().lstrip("vV").split("-")[0].split(".")[:4] if p]
+    while len(parts) < 4:
+        parts.append(0)
+    return (parts[0], parts[1], parts[2], parts[3])
+
+
+def compute_version_code(core_ver: str, app_rev: int, min_code: int = 0) -> int:
+    """Compute strictly increasing APP_VERSION_CODE = CORE_MAJOR*1e6 + CORE_MINOR*1e4 + CORE_PATCH*100 + APP_REV."""
+    maj, min_, pat = semver_tuple(core_ver)
+    code = maj * 1_000_000 + min_ * 10_000 + pat * 100 + app_rev
+    return max(code, min_code + 1)
+
+
+def bump_app_rev(
+    current_app_ver: str, current_core_ver: str, current_app_code: int
 ) -> Tuple[str, int]:
-    """Increment independent APP_VERSION_NAME (patch/minor/major) and strictly increase APP_VERSION_CODE."""
-    maj, min_, pat = semver_tuple(current_app_ver)
-    if part == "major":
-        nxt = (maj + 1, 0, 0)
-    elif part == "minor":
-        nxt = (maj, min_ + 1, 0)
-    elif part == "patch":
-        nxt = (maj, min_, pat + 1)
-    else:
-        raise ValueError(f"Unsupported version part: {part}")
-    ver_str = f"{nxt[0]}.{nxt[1]}.{nxt[2]}"
-    code = nxt[0] * 10000 + nxt[1] * 100 + nxt[2]
-    return ver_str, max(code, current_app_code + 1)
+    """Increment the 4th segment (<CORE_VERSION>.<APP_REV>) while preserving CORE_VERSION."""
+    core_tuple = semver_tuple(current_core_ver)
+    cur_tuple = parse_app_rev(current_app_ver)
+    next_rev = cur_tuple[3] + 1 if cur_tuple[:3] == core_tuple else 1
+    core_str = f"{core_tuple[0]}.{core_tuple[1]}.{core_tuple[2]}"
+    return f"{core_str}.{next_rev}", compute_version_code(core_str, next_rev, current_app_code)
 
 
 def compute_next_app_version(
@@ -95,11 +103,12 @@ def compute_next_app_version(
     current_app_code: int,
     current_core_ver: str = "",
 ) -> Tuple[str, int]:
-    """Advance decoupled APP_VERSION_NAME/CODE for an upstream core update."""
+    """Compute next <CORE_VERSION>.<APP_REV> and strictly increasing APP_VERSION_CODE."""
     up = semver_tuple(upstream_ver)
-    core = semver_tuple(current_core_ver) if current_core_ver else (0, 0, 0)
-    part = "minor" if (current_core_ver and (up[0], up[1]) > (core[0], core[1])) else "patch"
-    return bump_app_semver(current_app_ver, current_app_code, part)
+    core = semver_tuple(current_core_ver) if current_core_ver else parse_app_rev(current_app_ver)[:3]
+    if up > core:
+        return f"{upstream_ver}.0", compute_version_code(upstream_ver, 0, current_app_code)
+    return bump_app_rev(current_app_ver, upstream_ver, current_app_code)
 
 
 def fetch_upstream_release(url: str = DOWNLOAD_PAGE_URL) -> Tuple[str, str, str, str]:
@@ -202,7 +211,8 @@ def update_app_version_files(
     replace_regex_once(manifest, r'android:versionName="[^"]+"', f'android:versionName="{app_ver}"')
 
     readme = os.path.join(root, "README.md")
-    replace_regex_once(readme, r"App-v[0-9]+\.[0-9]+\.[0-9]+", f"App-v{app_ver}")
+    ver_pat = r"[0-9]+\.[0-9]+\.[0-9]+(?:\.[0-9]+)?"
+    replace_regex_once(readme, rf"App-v{ver_pat}", f"App-v{app_ver}")
     if core_ver is not None:
         replace_regex_once(readme, r"Core-[0-9]+\.[0-9]+\.[0-9]+", f"Core-{core_ver}")
 
@@ -212,8 +222,24 @@ def update_app_version_files(
         r"description: 'Release Tag \(e\.g\. v[^']+\)'",
         f"description: 'Release Tag (e.g. v{app_ver})'",
     )
-    replace_regex_once(wf, r"default: 'v[0-9]+\.[0-9]+\.[0-9]+'", f"default: 'v{app_ver}'")
-    replace_regex_once(wf, r"### What's New in v[0-9]+\.[0-9]+\.[0-9]+", f"### What's New in v{app_ver}")
+    replace_regex_once(wf, rf"default: 'v{ver_pat}'", f"default: 'v{app_ver}'")
+    if core_ver is not None:
+        replace_regex_once(
+            wf,
+            r"format\('Antigravity for Android \{0\} \(Core [0-9]+\.[0-9]+\.[0-9]+\)'",
+            f"format('Antigravity for Android {{0}} (Core {core_ver})'",
+        )
+        replace_regex_once(
+            wf,
+            r"<h3>Antigravity for Android &bull; Core [0-9]+\.[0-9]+\.[0-9]+</h3>",
+            f"<h3>Antigravity for Android &bull; Core {core_ver}</h3>",
+        )
+    core_display = core_ver or ".".join(str(x) for x in parse_app_rev(app_ver)[:3])
+    replace_regex_once(
+        wf,
+        rf"### What's New in v{ver_pat}[^\n]*",
+        f"### What's New in v{app_ver} (Antigravity {core_display})",
+    )
     if core_ver is not None and build_tag is not None:
         replace_regex_once(
             wf,
@@ -488,17 +514,16 @@ def cmd_apply(args: argparse.Namespace) -> int:
 
 
 def cmd_bump(args: argparse.Namespace) -> int:
-    """Bump independent Android app version (patch/minor/major) without changing CORE_VERSION."""
+    """Bump 4th segment (<CORE_VERSION>.<APP_REV>) without changing CORE_VERSION."""
     app_env = parse_env_file(os.path.join(PROJECT_ROOT, "config", "app.env"))
-    cur_app_ver = app_env.get("APP_VERSION_NAME", "0.0.0")
+    cur_app_ver = app_env.get("APP_VERSION_NAME", "0.0.0.0")
     cur_app_code = int(app_env.get("APP_VERSION_CODE", "0"))
-    core_ver = app_env.get("CORE_VERSION", "")
+    core_ver = app_env.get("CORE_VERSION") or ".".join(str(x) for x in parse_app_rev(cur_app_ver)[:3])
 
-    new_app_ver, new_app_code = bump_app_semver(cur_app_ver, cur_app_code, args.part)
+    new_app_ver, new_app_code = bump_app_rev(cur_app_ver, core_ver, cur_app_code)
     if not args.dry_run:
         update_app_version_files(PROJECT_ROOT, new_app_ver, new_app_code)
     print(json.dumps({
-        "part": args.part,
         "previous_app_version": cur_app_ver,
         "previous_app_code": cur_app_code,
         "new_app_version": new_app_ver,
@@ -524,8 +549,8 @@ def main() -> int:
     p_apply.add_argument("--upstream-build-id", default="", help="Override build id when using --tarball")
     p_apply.add_argument("--summary-out", default="", help="Write JSON summary to file")
 
-    p_bump = sub.add_parser("bump", help="Bump independent Android app version (patch/minor/major)")
-    p_bump.add_argument("part", choices=["patch", "minor", "major"], help="SemVer component to increment")
+    p_bump = sub.add_parser("bump", help="Increment 4th app revision (<CORE_VERSION>.<APP_REV>)")
+    p_bump.add_argument("part", nargs="?", default="rev", choices=["rev", "patch", "minor", "major"], help="Optional legacy arg (increments app revision)")
     p_bump.add_argument("--dry-run", action="store_true", help="Preview next version without editing files")
 
     args = parser.parse_args()

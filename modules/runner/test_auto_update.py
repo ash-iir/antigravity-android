@@ -27,27 +27,26 @@ class TestAutoUpdate(unittest.TestCase):
         self.assertEqual(m.group(2), "9988776655443322")
 
     def test_compute_next_app_version(self):
-        # Upstream minor bump (2.36.0 -> 2.37.0) bumps app minor independently of core version
+        # Upstream version bump resets 4th segment (.0) and shifts versionCode cleanly
         self.assertEqual(
-            auto_update.compute_next_app_version("2.37.0", "3.0.2", 30002, current_core_ver="2.36.0"),
-            ("3.1.0", 30100),
-        )
-        # Upstream patch bump (2.36.0 -> 2.36.1) or build-id rebuild bumps app patch
-        self.assertEqual(
-            auto_update.compute_next_app_version("2.36.1", "3.0.0", 30000, current_core_ver="2.36.0"),
-            ("3.0.1", 30001),
+            auto_update.compute_next_app_version("2.37.0", "2.36.0.2", 2360002, current_core_ver="2.36.0"),
+            ("2.37.0.0", 2370000),
         )
         self.assertEqual(
-            auto_update.compute_next_app_version("2.36.0", "3.0.3", 30003, current_core_ver="2.36.0"),
-            ("3.0.4", 30004),
+            auto_update.compute_next_app_version("2.36.1", "2.36.0.2", 2360002, current_core_ver="2.36.0"),
+            ("2.36.1.0", 2360100),
+        )
+        # Same upstream semver (build-id rebuild) increments 4th segment
+        self.assertEqual(
+            auto_update.compute_next_app_version("2.36.0", "2.36.0.2", 2360002, current_core_ver="2.36.0"),
+            ("2.36.0.3", 2360003),
         )
 
-    def test_bump_app_semver(self):
-        self.assertEqual(auto_update.bump_app_semver("3.0.0", 30000, "patch"), ("3.0.1", 30001))
-        self.assertEqual(auto_update.bump_app_semver("3.0.4", 30004, "minor"), ("3.1.0", 30100))
-        self.assertEqual(auto_update.bump_app_semver("3.1.2", 30102, "major"), ("4.0.0", 40000))
+    def test_bump_app_rev(self):
+        self.assertEqual(auto_update.bump_app_rev("2.36.0.2", "2.36.0", 2360002), ("2.36.0.3", 2360003))
+        self.assertEqual(auto_update.bump_app_rev("3.0.1", "2.36.0", 30001), ("2.36.0.1", 2360001))
         # Guarantees strictly monotonic versionCode even if existing code is ahead
-        self.assertEqual(auto_update.bump_app_semver("3.0.0", 30500, "patch"), ("3.0.1", 30501))
+        self.assertEqual(auto_update.bump_app_rev("2.36.0.2", "2.36.0", 2360500), ("2.36.0.3", 2360501))
 
     def test_extract_embedded_web_zip_and_sync_preserves_custom_files(self):
         buf = io.BytesIO()

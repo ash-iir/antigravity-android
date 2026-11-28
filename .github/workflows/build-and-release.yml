@@ -13,9 +13,9 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: 'Release Tag (e.g. v3.0.1)'
+        description: 'Release Tag (e.g. v2.36.0.2)'
         required: false
-        default: 'v3.0.1'
+        default: 'v2.36.0.2'
       draft:
         description: 'Create Draft Release'
         type: boolean
@@ -125,7 +125,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event.inputs.tag_name || github.ref_name }}
-          name: ${{ format('Antigravity for Android {0}', github.event.inputs.tag_name || github.ref_name) }}
+          name: ${{ format('Antigravity for Android {0} (Core 2.36.0)', github.event.inputs.tag_name || github.ref_name) }}
           draft: ${{ github.event.inputs.draft || false }}
           prerelease: ${{ github.event.inputs.prerelease || false }}
           make_latest: true
@@ -135,7 +135,7 @@ jobs:
             dist/SHA256SUMS.txt
           body: |
             <div align="center">
-              <h3>Antigravity for Android</h3>
+              <h3>Antigravity for Android &bull; Core 2.36.0</h3>
               <p>Autonomous AI Coding Environment &bull; Native Bionic Userspace &bull; ARM64</p>
             </div>
 
@@ -151,11 +151,12 @@ jobs:
 
             ---
 
-            ### What's New in v3.0.1
+            ### What's New in v2.36.0.2 (Antigravity 2.36.0)
 
-            * **Shizuku Manager Visibility (`moe.shizuku.client.V3_SUPPORT`):** Added Shizuku `V3_SUPPORT` manifest metadata alongside `API_V23` so Antigravity appears in Shizuku Manager's **Authorized applications** list.
-            * **Auto-Refresh `AGENTS.md` on App Updates:** `OnboardingSeeder` now refreshes `~/.gemini/config/AGENTS.md` when `APP_VERSION_CODE` increments so bugfix/docs updates reach existing installs automatically.
-            * **Decoupled App Versioning (`v3.0.x`):** Android app releases (`APP_VERSION_NAME`) follow independent SemVer separate from upstream Antigravity `CORE_VERSION` (`2.36.0`).
+            * **External Antigravity Versioning (`2.36.0.2`):** Switched to `<CORE_VERSION>.<APP_REV>` (`versionCode=2360002`) so the upstream Antigravity version (`2.36.0`) is visible outside the app (Android App Info, APK installer, GitHub tags) while tracking app bugfixes and features in the 4th segment.
+            * **In-App Release Notes Fix (`UpdateChecker`):** Fixed `extractChangelogPreview()` to skip the Packages table and display `### What's New` directly in the update dialog.
+            * **Shizuku Manager Visibility (`API_V23` + `V3_SUPPORT`):** Includes both `moe.shizuku.manager.permission.API_V23` and `moe.shizuku.client.V3_SUPPORT` manifest metadata for Shizuku Manager **Authorized applications** listing.
+            * **Auto-Refresh `AGENTS.md` on App Updates:** `OnboardingSeeder` refreshes `~/.gemini/config/AGENTS.md` whenever `APP_VERSION_CODE` increments, shipping corrected `pkg`, `agy-daemon`, `agy-notify`, `agy-root`/`agy-sys`, and `rish` documentation.
             * **Upstream Antigravity 2.36.0:** Updated `language_server` (`2.36.0-5596661662220288`) and web UI bundle (`main.js`, `compiled_tailwind.css`, `prism-latex`), with updated `crash_suppressor`, `resolv_redirect`, and `web/patch_main.py` patches.
             * **Startup Crash Fix (v2.35.3):** Includes the `MainActivity.onCreate` duplicate splash container attach fix.
             * **WebView Crash Recovery & Native Splash:** Includes `onRenderProcessGone` automatic WebView recovery, `RENDERER_PRIORITY_BOUND`, and `NativeSplashDotsView` (~40 MB RAM saved on launch).
@@ -171,4 +172,4 @@ jobs:
             ---
 
             > [!NOTE]
-            > **Seamless Upgrades:** Built with the consistent embedded signing keystore (`APP_VERSION_CODE=30001`). You can install this update directly over previous v2.x/v3.x releases without uninstalling or losing local projects.
+            > **Seamless Upgrades:** Built with the consistent embedded signing keystore (`APP_VERSION_CODE=2360002`). You can install this update directly over previous v2.x/v3.x releases without uninstalling or losing local projects.

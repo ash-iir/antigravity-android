@@ -22,7 +22,7 @@ modules/runner/
 
 | File | Language | Purpose | Key Dependencies |
 | :--- | :--- | :--- | :--- |
-| `auto_update.py` | Python 3 | Polls `antigravity.google/download`, extracts core/web, verifies patches, updates specs, and bumps decoupled app SemVer (`bump patch\|minor\|major`) | `modules/patches`, `web/build.sh` |
+| `auto_update.py` | Python 3 | Polls `antigravity.google/download`, extracts core/web, verifies patches, updates specs, and bumps 4-part `<CORE_VERSION>.<APP_REV>` (`bump`) | `modules/patches`, `web/build.sh` |
 | `test_auto_update.py` | Python 3 | Offline unit tests for upstream URL parsing, version bumps, and web ZIP sync | `unittest`, `zipfile` |
 | `prepare_runtime.py` | Python 3 | Extracts pristine core, applies binary patches, builds `standalone_runtime/`, verifies `manifest.json` | `modules/core`, `modules/patches` |
 | `start_core.sh` | Bash | Configures `libloader.so`, `liblse_compat.so`, FIFO log stream, and `stream_splitter.py` | `modules/io`, `libloader.so`, `liblse_compat.so` |

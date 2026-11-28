@@ -186,7 +186,7 @@ agy-notify cancel <tag>    # Takes a single positional <tag> (not -t); pass --ta
 
 ## 7. Project Architecture & Sync Rules (Documentation-First)
 
-- **Decoupled Versioning (`config/app.env`):** `APP_VERSION_NAME` / `APP_VERSION_CODE` track Android app releases independently (`MAJOR.MINOR.PATCH`), while `CORE_VERSION` (and `modules/core/spec/version.env`) tracks upstream Antigravity `language_server`. Use `python3 modules/runner/auto_update.py bump <patch|minor|major>` for app-only releases.
+- **4-Part Versioning (`config/app.env`):** `APP_VERSION_NAME` uses `<CORE_VERSION>.<APP_REV>` (e.g. `2.36.0.2`, `APP_VERSION_CODE = CORE_MAJOR*1e6 + CORE_MINOR*1e4 + CORE_PATCH*100 + APP_REV`), so upstream Antigravity `CORE_VERSION` stays visible outside the app while the 4th segment tracks app fixes/features. Use `python3 modules/runner/auto_update.py bump` for app-only releases.
 - **Documentation Sync:** Every module (`modules/*`, `app/`, `web/`, `env/`) must maintain an accurate, concise `README.md`. Any change to code, interfaces, or flags MUST be accompanied by immediate documentation updates.
 - **No Hardcoded Crutches:** Avoid hardcoding paths or assumptions where dynamic calculation (`$PREFIX`, `$HOME`, `$PROJECT_ROOT`) is possible.
 - **Clean State:** Keep working trees clean, avoid creating dead or duplicated state, and do not commit temporary build artifacts.

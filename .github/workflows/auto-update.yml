@@ -179,6 +179,13 @@ jobs:
 
             ---
 
+            ### What's New in v${{ steps.check.outputs.new_app_version }} (Core ${{ steps.check.outputs.upstream_version }})
+
+            * **Upstream Antigravity ${{ steps.check.outputs.upstream_version }}:** Automated upgrade to `language_server` (`${{ steps.check.outputs.upstream_build_tag }}`) and embedded web UI assets.
+            * **Verified Compatibility Patches:** All ELF compatibility patches and `web/build.sh` bundles verified by CI tests.
+
+            ---
+
             > [!NOTE]
             > **Seamless Upgrades:** Built with the consistent embedded signing keystore (`APP_VERSION_CODE=${{ steps.check.outputs.new_app_code }}`). You can install this update directly over previous v2.x/v3.x releases without uninstalling or losing local projects.
 
