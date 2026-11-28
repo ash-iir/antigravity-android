@@ -30,10 +30,13 @@ public final class OnboardingSeeder {
             seedStateFile(appContext, "antigravity_state.pbtxt",
                     new File(appData, "antigravity_state.pbtxt"));
 
-            // Seed default agent rules (AGENTS.md) into ~/.gemini/config/AGENTS.md
+            // Seed default agent rules (AGENTS.md) into ~/.gemini/config/AGENTS.md,
+            // refreshing whenever APP_VERSION_CODE changes so app updates ship updated rules.
             File configDir = projects.getParentFile();
             if (configDir != null && (configDir.isDirectory() || configDir.mkdirs())) {
-                seedStateFile(appContext, "AGENTS.md", new File(configDir, "AGENTS.md"));
+                seedVersionedFile(appContext, "AGENTS.md",
+                        new File(configDir, "AGENTS.md"),
+                        new File(configDir, ".agents_seed_version"));
             }
 
             // The project store resolves its projects here; without the
@@ -76,6 +79,29 @@ public final class OnboardingSeeder {
         } catch (Exception e) {
             Log.w(TAG, "onboarding seed failed (continuing): " + e.getMessage());
         }
+    }
+
+    private static void seedVersionedFile(Context appContext, String assetName, File target, File stamp)
+            throws Exception {
+        String currentVersion = String.valueOf(com.agy.BuildConfig.APP_VERSION_CODE);
+        String stampedVersion = "";
+        if (stamp.isFile()) {
+            try (java.io.FileInputStream fis = new java.io.FileInputStream(stamp)) {
+                stampedVersion = com.agy.util.IoUtil.readAll(fis, "UTF-8").trim();
+            } catch (Exception ignored) {
+            }
+        }
+        if (target.isFile() && target.length() > 0 && currentVersion.equals(stampedVersion)) {
+            Log.i(TAG, "versioned seed up to date (" + currentVersion + "): " + target);
+            return;
+        }
+        try (InputStream in = appContext.getAssets().open(
+                RuntimePaths.SEED_ASSET + "/" + assetName)) {
+            String content = com.agy.util.IoUtil.readAll(in, "UTF-8");
+            AtomicFileWriter.writeText(target, content);
+        }
+        AtomicFileWriter.writeText(stamp, currentVersion + "\n");
+        Log.i(TAG, "updated versioned seed (" + currentVersion + "): " + target);
     }
 
     private static void seedStateFile(Context appContext, String assetName, File target)

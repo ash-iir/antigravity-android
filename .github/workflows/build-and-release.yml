@@ -13,9 +13,9 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: 'Release Tag (e.g. v3.0.0)'
+        description: 'Release Tag (e.g. v3.0.1)'
         required: false
-        default: 'v3.0.0'
+        default: 'v3.0.1'
       draft:
         description: 'Create Draft Release'
         type: boolean
@@ -151,9 +151,11 @@ jobs:
 
             ---
 
-            ### What's New in v3.0.0
+            ### What's New in v3.0.1
 
-            * **Decoupled App Versioning:** Android app releases (`APP_VERSION_NAME`) now follow independent SemVer (`3.0.0`) separate from upstream Antigravity `CORE_VERSION` (`2.36.0`).
+            * **Shizuku Manager Visibility (`moe.shizuku.client.V3_SUPPORT`):** Added Shizuku `V3_SUPPORT` manifest metadata alongside `API_V23` so Antigravity appears in Shizuku Manager's **Authorized applications** list.
+            * **Auto-Refresh `AGENTS.md` on App Updates:** `OnboardingSeeder` now refreshes `~/.gemini/config/AGENTS.md` when `APP_VERSION_CODE` increments so bugfix/docs updates reach existing installs automatically.
+            * **Decoupled App Versioning (`v3.0.x`):** Android app releases (`APP_VERSION_NAME`) follow independent SemVer separate from upstream Antigravity `CORE_VERSION` (`2.36.0`).
             * **Upstream Antigravity 2.36.0:** Updated `language_server` (`2.36.0-5596661662220288`) and web UI bundle (`main.js`, `compiled_tailwind.css`, `prism-latex`), with updated `crash_suppressor`, `resolv_redirect`, and `web/patch_main.py` patches.
             * **Startup Crash Fix (v2.35.3):** Includes the `MainActivity.onCreate` duplicate splash container attach fix.
             * **WebView Crash Recovery & Native Splash:** Includes `onRenderProcessGone` automatic WebView recovery, `RENDERER_PRIORITY_BOUND`, and `NativeSplashDotsView` (~40 MB RAM saved on launch).
@@ -169,4 +171,4 @@ jobs:
             ---
 
             > [!NOTE]
-            > **Seamless Upgrades:** Built with the consistent embedded signing keystore (`APP_VERSION_CODE=30000`). You can install this update directly over previous v2.x/v3.x releases without uninstalling or losing local projects.
+            > **Seamless Upgrades:** Built with the consistent embedded signing keystore (`APP_VERSION_CODE=30001`). You can install this update directly over previous v2.x/v3.x releases without uninstalling or losing local projects.

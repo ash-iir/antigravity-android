@@ -106,7 +106,7 @@ agy-sys logcat [lines]                  # Filtered Android logcat (default: 120)
 Antigravity does **not** link the Shizuku Binder API library; instead it provides the `rish` CLI wrapper (`$PREFIX/bin/rish` and `$HOME/runtime/bin/rish`):
 - **Prerequisites (Not Pre-Bundled):**
   1. `rish` requires `rish_shizuku.dex`, which is **not** shipped in the repo/prefix by default. In **Shizuku Manager → Use Shizuku in terminal apps → Export files**, export `rish_shizuku.dex` and place it in `$PREFIX/bin/`, `$PREFIX/share/rish/`, or `$HOME/runtime/bin/` (with `chmod 400` on Android 14+). Without it, `rish` fails with `rish_shizuku.dex not found`.
-  2. Shizuku must be running, and Antigravity (`com.agy` / `com.agy.dev`) must declare `moe.shizuku.manager.permission.API_V23` in its `AndroidManifest.xml` to appear in Shizuku Manager's **Authorized applications** list (older APK builds without this permission will not appear in Shizuku Manager).
+  2. Shizuku must be running, and Antigravity (`com.agy` / `com.agy.dev`) must declare both `moe.shizuku.manager.permission.API_V23` and `<meta-data android:name="moe.shizuku.client.V3_SUPPORT" android:value="true" />` in `AndroidManifest.xml` to appear in Shizuku Manager's **Authorized applications** list.
 - **Common Elevated Operations (once `rish_shizuku.dex` & Shizuku authorization are active):**
   ```bash
   rish -c "ls -la /storage/emulated/0/Android/data"
