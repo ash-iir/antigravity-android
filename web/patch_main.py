@@ -218,13 +218,8 @@ def inject_account_switcher(content):
     gob_win = content[max(0, gob_idx - 2500):min(len(content), gob_idx + 4500)]
 
     gob_m = re.search(
-        r'var\s+([A-Za-z0-9_$]+)=\(\{isActive:[A-Za-z0-9_$]+\}=\{\}\)=>\{var\s+([A-Za-z0-9_$]+)=([A-Za-z0-9_$]+)\(\)\.core\.authService,.*?'
-        r'([A-Za-z0-9_$]+)=([A-Za-z0-9_$]+)\(([A-Za-z0-9_$]+)\),([A-Za-z0-9_$]+)=\5\(([A-Za-z0-9_$]+)\),.*?'
-        r'([A-Za-z0-9_$]+)=([A-Za-z0-9_$]+)\(\),[^;]*?'
-        r'([A-Za-z0-9_$]+)=\9\.get\("isRemoteControl"\)\?\?!1,'
-        r'([A-Za-z0-9_$]+)=([A-Za-z0-9_$]+)\(\)(\.useCloseSettings\(\))?',
+        r'var\s+([A-Za-z0-9_$]+)=\(\{isActive:[A-Za-z0-9_$]+\}=\{\}\)=>\{var\s+([A-Za-z0-9_$]+)=([A-Za-z0-9_$]+)\(\)\.core\.authService\b',
         gob_win,
-        re.DOTALL,
     )
     if not gob_m:
         print("[web-patch] account switcher: GOb header pattern not matched", file=sys.stderr)
@@ -232,17 +227,42 @@ def inject_account_switcher(content):
 
     auth_svc_var = gob_m.group(2)
     sd_fn = gob_m.group(3)
-    user_status_var = gob_m.group(4)
-    el_fn = gob_m.group(5)
-    sb_sel = gob_m.group(6)
-    auth_state_var = gob_m.group(7)
-    xk_sel = gob_m.group(8)
-    nj_fn = gob_m.group(10)
-    is_rc_var = gob_m.group(11)
-    close_settings_var = gob_m.group(12)
-    close_hook_fn = gob_m.group(13)
-    close_hook_suffix = gob_m.group(14) or ""
-    close_settings_expr = f"{close_hook_fn}(){close_hook_suffix}"
+    gob_hdr_tail = gob_win[gob_m.start():min(len(gob_win), gob_m.start() + 900)]
+
+    sel_m = re.search(
+        r'([A-Za-z0-9_$]+)=([A-Za-z0-9_$]+)\(([A-Za-z0-9_$]+)\),([A-Za-z0-9_$]+)=\2\(([A-Za-z0-9_$]+)\)',
+        gob_hdr_tail,
+    )
+    if not sel_m:
+        print("[web-patch] account switcher: GOb selector bindings not matched", file=sys.stderr)
+        return content, False
+    user_status_var, el_fn, sb_sel, auth_state_var, xk_sel = sel_m.groups()
+
+    rc_m = re.search(r'([A-Za-z0-9_$]+)=([A-Za-z0-9_$]+)\.get\("isRemoteControl"\)\?\?!1', gob_hdr_tail)
+    nj_call_m = re.search(
+        rf'\b{re.escape(rc_m.group(2))}=([A-Za-z0-9_$]+)\(\)' if rc_m else r'([A-Za-z0-9_$]+)=\1\(\)',
+        gob_hdr_tail,
+    ) if rc_m else None
+    if not rc_m or not nj_call_m:
+        print("[web-patch] account switcher: GOb remote-control settings binding not matched", file=sys.stderr)
+        return content, False
+    is_rc_var = rc_m.group(1)
+    nj_fn = nj_call_m.group(1)
+
+    gob_tail_preview = content[gob_idx:min(len(content), gob_idx + 5200)]
+    login_click_m = re.search(
+        rf'onClick:\(\)=>\{{([A-Za-z0-9_$]+)\(\);{re.escape(auth_svc_var)}\.showLoginFlow\(\)\}}',
+        gob_tail_preview,
+    )
+    close_hook_m = re.search(
+        rf'\b{re.escape(login_click_m.group(1))}=([A-Za-z0-9_$]+)\(\)(\.useCloseSettings\(\))?',
+        gob_hdr_tail,
+    ) if login_click_m else None
+    if not login_click_m or not close_hook_m:
+        print("[web-patch] account switcher: GOb closeSettings hook not matched", file=sys.stderr)
+        return content, False
+    close_settings_var = login_click_m.group(1)
+    close_settings_expr = f"{close_hook_m.group(1)}(){close_hook_m.group(2) or ''}"
 
     # Locate LU, PU, NU, OU, BI, Dgb, Ew, eE, react_id
     lu_m = re.search(

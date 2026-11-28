@@ -1,3 +1,28 @@
+# Antigravity for Android v2.36.0.3 (Antigravity Core 2.36.0)
+
+## Release Packages
+
+| Package | Application ID | Runtime Port | Description |
+| :--- | :--- | :--- | :--- |
+| **`antigravity.apk`** | `com.agy` | 45157 | Standard production release with original Google account checks. |
+| **`antigravity-region-bypass.apk`** | `com.agy` | 45157 | Region-bypass edition with account eligibility check bypass. |
+| **`SHA256SUMS.txt`** | — | — | Cryptographic SHA-256 checksums for verification. |
+
+## Changes & Fixes (v2.36.0.3)
+
+### 1. Upstream `v2.36.0.2` Integration (`0a9fb89`)
+* **4-Part `CORE.APP_REV` Versioning (`2.36.0.3` / `versionCode 2360003`):** Switched to `<CORE_VERSION>.<APP_REV>` so the Antigravity core version (`2.36.0`) stays visible outside the app (Android App Info, APK installer, GitHub tags) while upgrading cleanly in-place over both `v2.36.2` (`23602`) and upstream `v2.36.0.2` (`2360002`).
+* **Shizuku Manager Visibility (`API_V23` + `V3_SUPPORT`):** Declared both `moe.shizuku.manager.permission.API_V23` and `<meta-data android:name="moe.shizuku.client.V3_SUPPORT" android:value="true" />` in `AndroidManifest.xml` so Antigravity appears in Shizuku Manager **Authorized applications**.
+* **Auto-Refresh `AGENTS.md` on Upgrade:** `OnboardingSeeder` automatically refreshes `~/.gemini/config/AGENTS.md` whenever `APP_VERSION_CODE` increments, shipping updated `pkg`, `agy-daemon`, `agy-notify`, `agy-root`/`agy-sys`, and `rish` documentation.
+* **Dynamic Masked Binary & Web Patches:** Integrated dynamic masked matching for `crash_suppressor`, `pidfd`, and `web/patch_main.py` (`modules/patches/tests/test_dynamic_patches.py`), plus `UpdateChecker` release notes preview fix and `LogExporter` core version diagnostics.
+
+### 2. Preserved Fork Features
+* **Google OAuth & GitHub:** Enforced Google OAuth `prompt=select_account` account chooser (`GoogleOAuthUrlRewriter`), local `REDIRECT` mode fix for Gmail/Plugin OAuth, and bundled multi-account `GitHub (Local)` plugin with direct browser GitHub Device Flow login.
+* **Swarm Reliability & UX:** Dynamic `node` bridge, `nodejs-lts` auto-seeding, `pkg` fallback wrapper overwrite, post-startup `builtin/plugins` sync, Swarm Graph/Hive GPU ghosting & Live-mode anti-blinking fixes, and Swarm UI quick-open chip in the chat composer toolbar.
+* **Projects, Background Continuity, Navigation & UI:** Optional **"Also delete project folder from storage"** checkbox (`ProjectFolderDeleter.java`), `IMPORTANT` WebView renderer priority + host-resume stalled stream reset, `window.nativeNotifications` + Background Assistant Reply Watcher with Android 13+ `POST_NOTIFICATIONS` and direct deep-link, step-by-step Android Back + 1-step header `←` Back, Plugins mobile CSS, and automated upstream sync CI (`sync-upstream.yml`).
+
+---
+
 # Antigravity for Android v2.36.2
 
 ## Release Packages

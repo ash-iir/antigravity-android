@@ -1,7 +1,15 @@
 """
 crash_suppressor.py - Bypasses preinit CPU feature check and preinit atomic flag initialization for ARMv8.0-A CPUs.
 """
+import struct
 from typing import Tuple, Dict, Any, List, Union
+
+_CPU_INVARIANT_TAIL = bytes.fromhex("e903282a3f010aeae1020054e8033836e8045036")
+_CPU_PATCHED_BODY = bytes.fromhex("190000141f2003d51f2003d51f2003d51f2003d51f2003d51f2003d51f2003d5")
+_CPU_PATCHED_AFTER = bytes.fromhex("e903282a0a6280523f010aeae1050054")
+
+_ATOMIC_INVARIANT_TAIL = bytes.fromhex("290080520801e9f8480000b4c0035fd6")
+_ATOMIC_PATCHED_TAIL = bytes.fromhex("090140f9490000b4c0035fd6080100f9")
 
 CPU_SIGNATURES = [
     # v2.36.0
@@ -64,6 +72,42 @@ def find_all(data: Union[bytes, bytearray, memoryview], pattern: bytes) -> List[
         pos += len(pattern)
     return matches
 
+def _scan_dynamic_cpu(data: Union[bytes, bytearray, memoryview]) -> Tuple[List[int], List[int]]:
+    raw, patched = [], []
+    for pos in find_all(data, _CPU_INVARIANT_TAIL):
+        start = pos - 12
+        if start < 0 or start % 4 != 0:
+            continue
+        insn0, insn1, insn2 = struct.unpack_from("<III", data, start)
+        if (insn0 & 0x9F00001F) == 0x90000013 and insn1 == 0x5290600A and (insn2 & 0xFFC003FF) == 0xF9400268:
+            raw.append(start)
+    for pos in find_all(data, _CPU_PATCHED_BODY):
+        if pos % 4 == 0 and bytes(data[pos + len(_CPU_PATCHED_BODY):pos + len(_CPU_PATCHED_BODY) + len(_CPU_PATCHED_AFTER)]) == _CPU_PATCHED_AFTER:
+            patched.append(pos)
+    return raw, patched
+
+
+def _scan_dynamic_atomic(data: Union[bytes, bytearray, memoryview]) -> List[Tuple[bytes, bytes, List[int], List[int]]]:
+    matches = []
+    for pos in find_all(data, _ATOMIC_INVARIANT_TAIL):
+        start = pos - 8
+        if start < 0 or start % 4 != 0:
+            continue
+        insn0, insn1 = struct.unpack_from("<II", data, start)
+        if (insn0 & 0x9F00001F) == 0x90000008 and (insn1 & 0xFFC003FF) == 0x91000108:
+            prefix = bytes(data[start:pos])
+            matches.append((prefix + _ATOMIC_INVARIANT_TAIL, prefix + _ATOMIC_PATCHED_TAIL, [start], []))
+    for pos in find_all(data, _ATOMIC_PATCHED_TAIL):
+        start = pos - 8
+        if start < 0 or start % 4 != 0:
+            continue
+        insn0, insn1 = struct.unpack_from("<II", data, start)
+        if (insn0 & 0x9F00001F) == 0x90000008 and (insn1 & 0xFFC003FF) == 0x91000108:
+            prefix = bytes(data[start:pos])
+            matches.append((prefix + _ATOMIC_INVARIANT_TAIL, prefix + _ATOMIC_PATCHED_TAIL, [], [start]))
+    return matches
+
+
 def apply(data: bytearray, verify: bool = False, dry_run: bool = False, allow_missing: bool = False) -> Tuple[bool, Dict[str, Any]]:
     selected_cpu = None
     raw_cpu, repl_cpu = [], []
@@ -74,6 +118,11 @@ def apply(data: bytearray, verify: bool = False, dry_run: bool = False, allow_mi
             selected_cpu = (tgt, rpl)
             raw_cpu, repl_cpu = rc, rpc
             break
+    if not raw_cpu and not repl_cpu:
+        rc, rpc = _scan_dynamic_cpu(data)
+        if rc or rpc:
+            selected_cpu = (_CPU_INVARIANT_TAIL, _CPU_PATCHED_BODY)
+            raw_cpu, repl_cpu = rc, rpc
 
     atomic_matches = []
     raw_atomic, repl_atomic = [], []
@@ -81,6 +130,11 @@ def apply(data: bytearray, verify: bool = False, dry_run: bool = False, allow_mi
         ra = find_all(data, tgt)
         rpa = find_all(data, rpl)
         if ra or rpa:
+            atomic_matches.append((tgt, rpl, ra, rpa))
+            raw_atomic.extend(ra)
+            repl_atomic.extend(rpa)
+    if not raw_atomic and not repl_atomic:
+        for tgt, rpl, ra, rpa in _scan_dynamic_atomic(data):
             atomic_matches.append((tgt, rpl, ra, rpa))
             raw_atomic.extend(ra)
             repl_atomic.extend(rpa)

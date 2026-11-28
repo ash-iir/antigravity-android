@@ -210,9 +210,26 @@ public final class UpdateChecker {
         }
         StringBuilder out = new StringBuilder();
         String[] lines = body.split("\\r?\\n");
+        boolean hasWhatsNew = false;
+        for (String raw : lines) {
+            if (raw.trim().startsWith("### What's New")) {
+                hasWhatsNew = true;
+                break;
+            }
+        }
+        boolean capturing = !hasWhatsNew;
         int count = 0;
         for (String raw : lines) {
             String line = raw.trim();
+            if (!capturing) {
+                if (line.startsWith("### What's New")) {
+                    capturing = true;
+                } else {
+                    continue;
+                }
+            } else if (line.startsWith("### Foundation Highlights") || line.startsWith("---")) {
+                break;
+            }
             if (line.isEmpty() || line.startsWith("<") || line.startsWith("---")
                     || line.startsWith("|") || line.startsWith(">")) {
                 continue;
@@ -224,7 +241,7 @@ public final class UpdateChecker {
                 }
                 out.append(clean);
                 count++;
-                if (count >= 6 || out.length() > 420) {
+                if (count >= 8 || out.length() > 800) {
                     break;
                 }
             }
@@ -233,7 +250,8 @@ public final class UpdateChecker {
     }
 
     private static void showUpdateDialog(final Activity activity, final ReleaseInfo info, String current) {
-        String message = "Current: v" + current + "\nLatest:  " + info.tagName + "\n\n"
+        String message = "Current: v" + current + " (Antigravity " + RuntimeConfig.CORE_VERSION + ")\n"
+                + "Latest:  " + info.tagName + "\n\n"
                 + info.changelogPreview;
 
         AlertDialog.Builder builder = new AlertDialog.Builder(activity)

@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.agy"
-    android:versionCode="23602"
-    android:versionName="2.36.2">
+    android:versionCode="2360003"
+    android:versionName="2.36.0.3">
 
     <!-- targetSdk 28 is REQUIRED: Android 10+ (W^X) only allows exec of a binary
          from the app data dir when the app targets API <= 28. The core + glibc
@@ -28,6 +28,7 @@
             <action android:name="android.intent.action.OPEN_DOCUMENT" />
             <data android:mimeType="*/*" />
         </intent>
+        <package android:name="moe.shizuku.privileged.api" />
     </queries>
 
     <uses-permission android:name="android.permission.INTERNET" />
@@ -43,6 +44,7 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="moe.shizuku.manager.permission.API_V23" />
     <permission
         android:name="com.agy.permission.INTERNAL_BROADCAST"
         android:protectionLevel="signature" />
@@ -60,6 +62,11 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:label="@string/app_name"
         android:theme="@style/AppTheme">
+
+        <!-- Required by Shizuku Manager so Antigravity appears in Authorized applications -->
+        <meta-data
+            android:name="moe.shizuku.client.V3_SUPPORT"
+            android:value="true" />
 
         <!--
           MainActivity is NOT the launcher: the LAUNCHER intent-filter lives on
