@@ -153,7 +153,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.check.outputs.new_app_version }}
-          name: Antigravity for Android v${{ steps.check.outputs.new_app_version }}
+          name: Antigravity for Android v${{ steps.check.outputs.new_app_version }} (Core ${{ steps.check.outputs.upstream_version }})
           draft: false
           prerelease: false
           make_latest: true
@@ -180,7 +180,7 @@ jobs:
             ---
 
             > [!NOTE]
-            > **Seamless Upgrades:** Built with the consistent embedded signing keystore (`APP_VERSION_CODE=${{ steps.check.outputs.new_app_code }}`). You can install this update directly over previous v2.x releases without uninstalling or losing local projects.
+            > **Seamless Upgrades:** Built with the consistent embedded signing keystore (`APP_VERSION_CODE=${{ steps.check.outputs.new_app_code }}`). You can install this update directly over previous v2.x/v3.x releases without uninstalling or losing local projects.
 
       - name: Open Review PR or Issue on Patch/Test Failure
         if: steps.check.outputs.needs_update == 'true' && (steps.apply.outputs.apply_rc != '0' || steps.tests.outputs.tests_ok != 'true') && github.event.inputs.dry_run != 'true'

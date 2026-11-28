@@ -13,9 +13,9 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: 'Release Tag (e.g. v2.36.0)'
+        description: 'Release Tag (e.g. v3.0.0)'
         required: false
-        default: 'v2.36.0'
+        default: 'v3.0.0'
       draft:
         description: 'Create Draft Release'
         type: boolean
@@ -151,8 +151,9 @@ jobs:
 
             ---
 
-            ### What's New in v2.36.0
+            ### What's New in v3.0.0
 
+            * **Decoupled App Versioning:** Android app releases (`APP_VERSION_NAME`) now follow independent SemVer (`3.0.0`) separate from upstream Antigravity `CORE_VERSION` (`2.36.0`).
             * **Upstream Antigravity 2.36.0:** Updated `language_server` (`2.36.0-5596661662220288`) and web UI bundle (`main.js`, `compiled_tailwind.css`, `prism-latex`), with updated `crash_suppressor`, `resolv_redirect`, and `web/patch_main.py` patches.
             * **Startup Crash Fix (v2.35.3):** Includes the `MainActivity.onCreate` duplicate splash container attach fix.
             * **WebView Crash Recovery & Native Splash:** Includes `onRenderProcessGone` automatic WebView recovery, `RENDERER_PRIORITY_BOUND`, and `NativeSplashDotsView` (~40 MB RAM saved on launch).
@@ -168,4 +169,4 @@ jobs:
             ---
 
             > [!NOTE]
-            > **Seamless Upgrades:** Built with the consistent embedded signing keystore (`APP_VERSION_CODE=23600`). You can install this update directly over previous v2.x releases without uninstalling or losing local projects.
+            > **Seamless Upgrades:** Built with the consistent embedded signing keystore (`APP_VERSION_CODE=30000`). You can install this update directly over previous v2.x/v3.x releases without uninstalling or losing local projects.

@@ -48,6 +48,7 @@ public final class LogExporter {
             }
         }
         sb.append("App Version: ").append(verName).append(" (versionCode ").append(verCode).append(")\n");
+        sb.append("Core Version: ").append(RuntimeConfig.CORE_VERSION).append("\n");
         sb.append("Device: ").append(Build.MANUFACTURER).append(" ").append(Build.MODEL)
                 .append(" (").append(Build.DEVICE).append(")\n");
         sb.append("Android OS: ").append(Build.VERSION.RELEASE)

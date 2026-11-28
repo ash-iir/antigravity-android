@@ -71,20 +71,35 @@ def semver_tuple(ver: str) -> Tuple[int, int, int]:
     return (parts[0], parts[1], parts[2])
 
 
-def compute_next_app_version(
-    upstream_ver: str, current_app_ver: str, current_app_code: int
+def bump_app_semver(
+    current_app_ver: str, current_app_code: int, part: str = "patch"
 ) -> Tuple[str, int]:
-    """Compute next APP_VERSION_NAME and strictly increasing APP_VERSION_CODE."""
-    up = semver_tuple(upstream_ver)
-    cur = semver_tuple(current_app_ver)
-    if up > cur:
-        code = up[0] * 10000 + up[1] * 100 + up[2]
-        return upstream_ver, max(code, current_app_code + 1)
-    # Same semver (e.g. rebuild with new build_id) or local patch ahead of core:
-    bumped = (cur[0], cur[1], cur[2] + 1)
-    ver_str = f"{bumped[0]}.{bumped[1]}.{bumped[2]}"
-    code = bumped[0] * 10000 + bumped[1] * 100 + bumped[2]
+    """Increment independent APP_VERSION_NAME (patch/minor/major) and strictly increase APP_VERSION_CODE."""
+    maj, min_, pat = semver_tuple(current_app_ver)
+    if part == "major":
+        nxt = (maj + 1, 0, 0)
+    elif part == "minor":
+        nxt = (maj, min_ + 1, 0)
+    elif part == "patch":
+        nxt = (maj, min_, pat + 1)
+    else:
+        raise ValueError(f"Unsupported version part: {part}")
+    ver_str = f"{nxt[0]}.{nxt[1]}.{nxt[2]}"
+    code = nxt[0] * 10000 + nxt[1] * 100 + nxt[2]
     return ver_str, max(code, current_app_code + 1)
+
+
+def compute_next_app_version(
+    upstream_ver: str,
+    current_app_ver: str,
+    current_app_code: int,
+    current_core_ver: str = "",
+) -> Tuple[str, int]:
+    """Advance decoupled APP_VERSION_NAME/CODE for an upstream core update."""
+    up = semver_tuple(upstream_ver)
+    core = semver_tuple(current_core_ver) if current_core_ver else (0, 0, 0)
+    part = "minor" if (current_core_ver and (up[0], up[1]) > (core[0], core[1])) else "patch"
+    return bump_app_semver(current_app_ver, current_app_code, part)
 
 
 def fetch_upstream_release(url: str = DOWNLOAD_PAGE_URL) -> Tuple[str, str, str, str]:
@@ -168,6 +183,46 @@ def replace_regex_once(path: str, pattern: str, repl: str, flags: int = 0) -> No
         f.write(new_text)
 
 
+def update_app_version_files(
+    root: str,
+    app_ver: str,
+    app_code: int,
+    core_ver: Optional[str] = None,
+    build_tag: Optional[str] = None,
+) -> None:
+    """Sync APP_VERSION_NAME/CODE (and optionally CORE_VERSION) across app config, manifest, README, and workflow."""
+    app_env = os.path.join(root, "config", "app.env")
+    replace_regex_once(app_env, r"^APP_VERSION_NAME=.*$", f"APP_VERSION_NAME={app_ver}", re.M)
+    replace_regex_once(app_env, r"^APP_VERSION_CODE=.*$", f"APP_VERSION_CODE={app_code}", re.M)
+    if core_ver is not None:
+        replace_regex_once(app_env, r"^CORE_VERSION=.*$", f"CORE_VERSION={core_ver}", re.M)
+
+    manifest = os.path.join(root, "app", "src", "main", "AndroidManifest.xml")
+    replace_regex_once(manifest, r'android:versionCode="[^"]+"', f'android:versionCode="{app_code}"')
+    replace_regex_once(manifest, r'android:versionName="[^"]+"', f'android:versionName="{app_ver}"')
+
+    readme = os.path.join(root, "README.md")
+    replace_regex_once(readme, r"App-v[0-9]+\.[0-9]+\.[0-9]+", f"App-v{app_ver}")
+    if core_ver is not None:
+        replace_regex_once(readme, r"Core-[0-9]+\.[0-9]+\.[0-9]+", f"Core-{core_ver}")
+
+    wf = os.path.join(root, ".github", "workflows", "build-and-release.yml")
+    replace_regex_once(
+        wf,
+        r"description: 'Release Tag \(e\.g\. v[^']+\)'",
+        f"description: 'Release Tag (e.g. v{app_ver})'",
+    )
+    replace_regex_once(wf, r"default: 'v[0-9]+\.[0-9]+\.[0-9]+'", f"default: 'v{app_ver}'")
+    replace_regex_once(wf, r"### What's New in v[0-9]+\.[0-9]+\.[0-9]+", f"### What's New in v{app_ver}")
+    if core_ver is not None and build_tag is not None:
+        replace_regex_once(
+            wf,
+            r"\*\*Upstream Antigravity [0-9]+\.[0-9]+\.[0-9]+:\*\*[^\n]*",
+            f"**Upstream Antigravity {core_ver}:** Updated `language_server` (`{build_tag}`) and embedded web UI assets with automated patch verification.",
+        )
+    replace_regex_once(wf, r"APP_VERSION_CODE=[0-9]+", f"APP_VERSION_CODE={app_code}")
+
+
 def update_metadata_files(
     root: str,
     app_ver: str,
@@ -181,14 +236,7 @@ def update_metadata_files(
     final_sha_nogates: str,
 ) -> None:
     """Update all version specs, checksums, test expectations, and release docs."""
-    app_env = os.path.join(root, "config", "app.env")
-    replace_regex_once(app_env, r"^APP_VERSION_NAME=.*$", f"APP_VERSION_NAME={app_ver}", re.M)
-    replace_regex_once(app_env, r"^APP_VERSION_CODE=.*$", f"APP_VERSION_CODE={app_code}", re.M)
-    replace_regex_once(app_env, r"^CORE_VERSION=.*$", f"CORE_VERSION={core_ver}", re.M)
-
-    manifest = os.path.join(root, "app", "src", "main", "AndroidManifest.xml")
-    replace_regex_once(manifest, r'android:versionCode="[^"]+"', f'android:versionCode="{app_code}"')
-    replace_regex_once(manifest, r'android:versionName="[^"]+"', f'android:versionName="{app_ver}"')
+    update_app_version_files(root, app_ver, app_code, core_ver=core_ver, build_tag=build_tag)
 
     ver_env = os.path.join(root, "modules", "core", "spec", "version.env")
     replace_regex_once(ver_env, r"^CORE_VERSION=.*$", f"CORE_VERSION={core_ver}", re.M)
@@ -240,9 +288,6 @@ def update_metadata_files(
         f'TARGET_SHA_NO_BYPASS = "{final_sha_nogates}"',
     )
 
-    readme = os.path.join(root, "README.md")
-    replace_regex_once(readme, r"Version-[0-9]+\.[0-9]+\.[0-9]+", f"Version-{app_ver}")
-
     notes = os.path.join(root, "RELEASE_NOTES.md")
     with open(notes, "r", encoding="utf-8") as f:
         old_notes = f.read()
@@ -264,21 +309,6 @@ def update_metadata_files(
         )
         with open(notes, "w", encoding="utf-8") as f:
             f.write(new_section + old_notes)
-
-    wf = os.path.join(root, ".github", "workflows", "build-and-release.yml")
-    replace_regex_once(
-        wf,
-        r"description: 'Release Tag \(e\.g\. v[^']+\)'",
-        f"description: 'Release Tag (e.g. v{app_ver})'",
-    )
-    replace_regex_once(wf, r"default: 'v[0-9]+\.[0-9]+\.[0-9]+'", f"default: 'v{app_ver}'")
-    replace_regex_once(wf, r"### What's New in v[0-9]+\.[0-9]+\.[0-9]+", f"### What's New in v{app_ver}")
-    replace_regex_once(
-        wf,
-        r"\*\*Upstream Antigravity [0-9]+\.[0-9]+\.[0-9]+:\*\*[^\n]*",
-        f"**Upstream Antigravity {core_ver}:** Updated `language_server` (`{build_tag}`) and embedded web UI assets with automated patch verification.",
-    )
-    replace_regex_once(wf, r"APP_VERSION_CODE=[0-9]+", f"APP_VERSION_CODE={app_code}")
 
 
 def patch_and_verify_core(raw_bin: str, skip_gates: bool) -> Tuple[bool, str, str]:
@@ -306,12 +336,15 @@ def cmd_check(args: argparse.Namespace) -> int:
     app_env = parse_env_file(os.path.join(PROJECT_ROOT, "config", "app.env"))
     ver_env = parse_env_file(os.path.join(PROJECT_ROOT, "modules", "core", "spec", "version.env"))
     cur_tag = ver_env.get("CORE_BUILD_TAG", "")
+    cur_core_ver = ver_env.get("CORE_VERSION", app_env.get("CORE_VERSION", ""))
     cur_app_ver = app_env.get("APP_VERSION_NAME", "0.0.0")
     cur_app_code = int(app_env.get("APP_VERSION_CODE", "0"))
 
     up_ver, up_build, up_tag, up_url = fetch_upstream_release(args.download_url)
     needs_update = (up_tag != cur_tag) or args.force
-    new_app_ver, new_app_code = compute_next_app_version(up_ver, cur_app_ver, cur_app_code)
+    new_app_ver, new_app_code = compute_next_app_version(
+        up_ver, cur_app_ver, cur_app_code, current_core_ver=cur_core_ver
+    )
 
     result = {
         "needs_update": "true" if needs_update else "false",
@@ -332,11 +365,12 @@ def cmd_apply(args: argparse.Namespace) -> int:
     app_env = parse_env_file(os.path.join(PROJECT_ROOT, "config", "app.env"))
     ver_env = parse_env_file(os.path.join(PROJECT_ROOT, "modules", "core", "spec", "version.env"))
     cur_tag = ver_env.get("CORE_BUILD_TAG", "")
+    cur_core_ver = ver_env.get("CORE_VERSION", app_env.get("CORE_VERSION", ""))
     cur_app_ver = app_env.get("APP_VERSION_NAME", "0.0.0")
     cur_app_code = int(app_env.get("APP_VERSION_CODE", "0"))
 
     if args.tarball:
-        up_ver = args.upstream_version or cur_app_ver
+        up_ver = args.upstream_version or cur_core_ver or cur_app_ver
         up_build = args.upstream_build_id or "0"
         up_tag = f"{up_ver}-{up_build}"
         up_url = args.tarball
@@ -347,7 +381,9 @@ def cmd_apply(args: argparse.Namespace) -> int:
         print(f"[auto-update] Already at latest upstream build: {cur_tag}")
         return 0
 
-    new_app_ver, new_app_code = compute_next_app_version(up_ver, cur_app_ver, cur_app_code)
+    new_app_ver, new_app_code = compute_next_app_version(
+        up_ver, cur_app_ver, cur_app_code, current_core_ver=cur_core_ver
+    )
     summary: Dict[str, object] = {
         "upstream_version": up_ver,
         "upstream_build_tag": up_tag,
@@ -451,6 +487,28 @@ def cmd_apply(args: argparse.Namespace) -> int:
         return 0
 
 
+def cmd_bump(args: argparse.Namespace) -> int:
+    """Bump independent Android app version (patch/minor/major) without changing CORE_VERSION."""
+    app_env = parse_env_file(os.path.join(PROJECT_ROOT, "config", "app.env"))
+    cur_app_ver = app_env.get("APP_VERSION_NAME", "0.0.0")
+    cur_app_code = int(app_env.get("APP_VERSION_CODE", "0"))
+    core_ver = app_env.get("CORE_VERSION", "")
+
+    new_app_ver, new_app_code = bump_app_semver(cur_app_ver, cur_app_code, args.part)
+    if not args.dry_run:
+        update_app_version_files(PROJECT_ROOT, new_app_ver, new_app_code)
+    print(json.dumps({
+        "part": args.part,
+        "previous_app_version": cur_app_ver,
+        "previous_app_code": cur_app_code,
+        "new_app_version": new_app_ver,
+        "new_app_code": new_app_code,
+        "core_version": core_ver,
+        "dry_run": bool(args.dry_run),
+    }, indent=2))
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Antigravity upstream auto-updater.")
     parser.add_argument("--download-url", default=DOWNLOAD_PAGE_URL)
@@ -466,9 +524,15 @@ def main() -> int:
     p_apply.add_argument("--upstream-build-id", default="", help="Override build id when using --tarball")
     p_apply.add_argument("--summary-out", default="", help="Write JSON summary to file")
 
+    p_bump = sub.add_parser("bump", help="Bump independent Android app version (patch/minor/major)")
+    p_bump.add_argument("part", choices=["patch", "minor", "major"], help="SemVer component to increment")
+    p_bump.add_argument("--dry-run", action="store_true", help="Preview next version without editing files")
+
     args = parser.parse_args()
     if args.cmd == "check":
         return cmd_check(args)
+    if args.cmd == "bump":
+        return cmd_bump(args)
     return cmd_apply(args)
 
 

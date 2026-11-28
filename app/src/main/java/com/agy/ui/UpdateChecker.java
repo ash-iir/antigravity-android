@@ -233,7 +233,8 @@ public final class UpdateChecker {
     }
 
     private static void showUpdateDialog(final Activity activity, final ReleaseInfo info, String current) {
-        String message = "Current: v" + current + "\nLatest:  " + info.tagName + "\n\n"
+        String message = "Current: v" + current + " (Core " + RuntimeConfig.CORE_VERSION + ")\n"
+                + "Latest:  " + info.tagName + "\n\n"
                 + info.changelogPreview;
 
         AlertDialog.Builder builder = new AlertDialog.Builder(activity)
